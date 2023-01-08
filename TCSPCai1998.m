@@ -6,7 +6,7 @@ d = Inf(nNodes, T+1); % Stores cost to a node (row) of at max time t (column), t
 d(1,1) = 0; % Corresponds to d(s,0)
 d_opt = Inf(nNodes,1);
 heaps = cell(nNodes,1);
-dm = zeros(nNodes,T+1);
+dm = Inf(nNodes,T+1);
 for x = 1:nNodes
     heaps{x} = [0, d(x,1)]; % [t, d(x,t)] % This is for t = 0
     dm(x,1) = d(x,1);
@@ -32,7 +32,7 @@ end
 
 %% Main loop
 
-for t = 0:T
+for t = 1:T
     % Initialize Gamma the arrival time at a vertex y through an edge e exactly at time t
     gamma = zeros(size(edges,1), 3); % [x,y,gamma(x,y)]
     for i = 1:size(edges,1)
@@ -45,6 +45,7 @@ for t = 0:T
         x = arrivalTimes(i,1);
         y = arrivalTimes(i,2);
         e = edgeNum(x,y); %find(ismember(edges, [x,y], 'rows'));
+        
         uD = arrivalTimes(i,3);
         gamma(e,3) = min(gamma(e,3), dm(x,uD+1) + getEdgeTime(x,y,uD,A,B,oprAvail));
 %         gamma(e,3) = min(gamma(e,3), max(uD, dm(x,uD+1)) + getEdgeTime(x,y,uD,A,B,oprAvail));
@@ -53,8 +54,8 @@ for t = 0:T
         end
     end
     for y = 1:nNodes
-        gammaY1 = gamma(gamma(:,2)==y,3);
-        gammaY2 = gamma(gamma(:,2)==y+nNodes,3);
+        gammaY1 = gamma(gamma(:,2)==y,3); % Gamma for autonomous edges
+        gammaY2 = gamma(gamma(:,2)==y+nNodes,3); % For teleoperated edges
         gammaY = [gammaY1; gammaY2];
         if ~isempty(gammaY)
             d(y,t+1) = min(gammaY);
@@ -69,8 +70,10 @@ for t = 0:T
     end
     for y = 1:nNodes
         uA = heaps{y}(1,1); % Time for minimum d(y,t)
-        dm(y,t+1) = max(t,d(y,uA+1)); % This max operation stores the time taken instead of cost of travel.
+        if d(y,uA+1) < Inf
+            dm(y,t+1) = max(t,d(y,uA+1)); % This max operation stores the time taken instead of cost of travel.
 %         dm(y,t+1) = d(y,uA+1);
+        end
     end
     if dm(goalVertex, t+1) < Inf
         break;
@@ -125,7 +128,7 @@ function path = getPath(goalVertex, goalArrivalTime, d, arrivalTimes, maxWaits, 
             predecessorNodes = arrivalTimes(predecessorNodes,:);
             for i = 1:size(predecessorNodes,1)
                 p = predecessorNodes(i,:);
-                id = (p(3):-1:p(3)-maxWaits(p(1)))+1;
+                id = (p(3):-1:p(3)-maxWaits(p(1)))+1; % p(3) is the departure time, so this line gives us all possible arrival times at this predecessor node
                 id = id(id>0);
                 if min(d(p(1), id)) < Inf
                     selectedPred = p;

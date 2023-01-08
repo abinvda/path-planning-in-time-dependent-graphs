@@ -4,29 +4,39 @@
 % 3) Specify max allowed waiting for each edge (I think we should use matrices for all these)
 % 4) Operator availability function using a list of times when availability changes 
 clear;
+nItr = 100;
+pathTime = zeros(1, nItr);
+timeCai = zeros(1, nItr);
+timeOur = zeros(1, nItr);
 
+for itr = 1:nItr
 
 nRobots = 1;
 % A = magic(4);
 % A = A>10; % Matrix with binary values. 0 = No edge, 1 = Edge present
 % A = A - diag(diag(A)); % Set diagonal to 0, meaning no self loop
 
-nNodes = 10; % Nodes in the graph are <1,2,...,nNodes>
-E = rand(nNodes)>0.2; % Will be used to create A and B
-E = E - diag(diag(E)); % Diagonal elements are 0 because self-loops are not allowed.
-for j = 1:nNodes
-    for i = 1:j
-        if abs(i-j) > 4
-            E(i,j) = 0;
-        else
-            E(i,j) = E(j,i);
-        end
-    end
-end
-E = triu(E); % Trying upper diagonal matrix to prevent cycles.
+nNodes = 50; %randi([30,50]); % Nodes in the graph are <1,2,...,nNodes>
+
+[E, posX, posY] = getMap(nNodes, 100, 100);
+
+% E = rand(nNodes)>0.1; % Will be used to create A and B
+% E = E - diag(diag(E)); % Diagonal elements are 0 because self-loops are not allowed.
+% for j = 1:nNodes
+%     for i = 1:j
+%         if abs(i-j) > ceil(nNodes/3)
+%             E(i,j) = 0;
+% %         else
+% %             E(i,j) = E(j,i);
+%         end
+%     end
+% end
+
+% E = triu(E); % Trying upper diagonal matrix to prevent cycles.
 % E(:,end) = 0;
-B = 1*randi([2,20], nNodes, nNodes) .* E;
-A = B + 1*(randi([10,30], nNodes, nNodes) .* E);
+f = randi([1 4]);
+B = f*randi([10,50], nNodes, nNodes) .* E;
+A = B + f*(randi([10,50], nNodes, nNodes) .* E);
 Diff = A - B;
 
 % E = [0 1 1 0 0 0;
@@ -49,9 +59,9 @@ Diff = A - B;
 %      0 0 0 0 0 0];
 
 
-[x,y] = find(E);
-edges = [x y];
-edgesCai = [x y; x y+nNodes];
+[eX,eY] = find(E);
+edges = [eX eY];
+edgesCai = [eX eY; eX eY+nNodes];
 % edges = cell(nNodes,1);%[x y];
 % for i = 1:nNodes
 %     y = find(E(i,:));
@@ -71,35 +81,83 @@ edgesCai = [x y; x y+nNodes];
 % A(idx) = autoTimes;
 % B(idx) = teleTimes;
 
-%% max waiting times at each node
-Dif = max(Diff');
-maxWaits = 2*ones(nNodes,1); %randi(50, [nNodes, 1]); %11*ones(nNodes,1);
-maxTime = 1000; % To limit the search while testing. Can be removed once I fix the issue with oprAvail
-
 %% Start and Goal vertices
 startVertex = 1;
 goalVertex = nNodes;
 
+%% max waiting times at each node
+Dif = max(Diff');
+maxWaits = randi([20, 40], [nNodes, 1]); %11*ones(nNodes,1);
+pathAuto = staticDijkstras(edges, startVertex, goalVertex, A);
+if isempty(pathAuto)
+    disp("No path exists!")
+    break;
+end
+maxTime = pathAuto(end,2); % To limit the search while testing. Can be removed once I fix the issue with oprAvail
+ 
 %% Operator availability
 % oprAvail = [2, 10, 15, 30, 35, 1000]; % Times when opr availability changes. Default start is not available, if first element is 0 mean we start with available.
-oprAvail = [0 5 29 1000];%sort(randi(600, 1, 30));
+oprAvail = f*sort(randi(maxTime, 1, 25));
 
 %% Robot path
 % A robot's path is a kx4 matrix. Specified as a list of nodes to traverse, arrival times, wait times at those nodes and mode of operation. 
 
 %% TODO: A function to compute path
+% tic
+
+% load('variables');
+
+
+path = staticDijkstras(edges, startVertex, goalVertex, B);
+% pathAuto = staticDijkstras(edges, startVertex, goalVertex, A);
+distToGoal = staticDijkstras([edges(:,2) edges(:,1)], goalVertex, startVertex, B', 'all');
+% toc
 tic
-path = staticDijkstras(edges, startVertex, goalVertex, B)
-pathAuto = staticDijkstras(edges, startVertex, goalVertex, A)
-toc
+pathCai = TCSPCai1998(edgesCai, goalVertex, A, B, oprAvail, maxWaits, pathAuto(end,2));
+timeCai(itr) = toc;
+pathTime(itr) = pathCai(end,2);
 tic
-path = TCSPCai1998(edgesCai, goalVertex, A, B, oprAvail, maxWaits, pathAuto(end,2))
-toc
-tic
-path = getRobotPath(edges, startVertex, goalVertex, A, B, oprAvail, maxWaits, pathAuto(end,2))
-toc
-tic
-path = getRobotPath2(edges, startVertex, goalVertex, A, B, oprAvail, maxWaits, pathAuto(end,2))
-toc
+path = getRobotPath(edges, startVertex, goalVertex, A, B, oprAvail, maxWaits, pathAuto(end,2), distToGoal);
+timeOur(itr) = toc;
+disp(itr)
+if ~isequal(pathCai(end,2), path(end,2))
+    pathCai
+    path
+    disp("Wrong!!!")
+end
+end
+
+%% Plotting
+plot(pathTime, timeCai, '*')
+hold on
+plot(pathTime, timeOur, 'o')
+xlabel('Duration of optimal path (sec)', 'FontSize', 18)
+ylabel('Computation time (sec)', 'FontSize', 18)
+legend('Cai 1998', 'Ours')
+title("No. of Nodes = " + nNodes)
+ax = gca;
+ax.FontSize = 15;
+
+% Fit a linear curve to the data for timeCai
+p = polyfit(pathTime, timeCai, 1);
+
+% Evaluate the curve at a fine grid of points
+t = linspace(min(pathTime), max(pathTime), 100);
+y = polyval(p, t);
+
+% Plot the curve
+plot(t, y, '--', 'LineWidth', 2);
+
+% Fit a linear curve to the data for timeOur
+p = polyfit(pathTime, timeOur, 1);
+
+% Evaluate the curve at a fine grid of points
+t = linspace(min(pathTime), max(pathTime), 100);
+y = polyval(p, t);
+
+% Plot the curve
+plot(t, y, '--', 'LineWidth', 2);
+
+
 %% Simulate the system and get finish times of all robots for all tasks
 % completionTimes = getCompletionTimes(nRobots, A, B, startState, path, oprAvail);
