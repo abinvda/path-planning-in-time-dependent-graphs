@@ -18,8 +18,10 @@ while ~isempty(Q)
     % Pop the best element from the Q
     [bestNode, Q] = heapPop(Q);
     done(bestNode(1)) = 1;
-    if bestNode(1) == goalVertex
-        break;
+    if ~all
+        if bestNode(1) == goalVertex
+            break;
+        end
     end
     neighbours = find(A(bestNode(1),:) > 0); % In the edges matrix, find all where first element is the selected node
 %   neighbours = edges(edges(:,1) == bestNode(1,1), 2); % In the edges matrix, find all where first element is the selected node
@@ -38,15 +40,15 @@ while ~isempty(Q)
     % Do some cleaning, remove redundant nodes from the Q
 end 
 % Get the path
-if bestNode(1) == goalVertex
-    if all
-        path = arrivalTimes;
-    else
+if ~all
+    if bestNode(1) == goalVertex
         path = getPathStatic(predecessors, arrivalTimes, startVertex, goalVertex);
+    else
+        disp("Path not found.")
+        path = [];
     end
 else
-    disp("Path not found.")
-    path = [];
+    path = arrivalTimes;
 end
 end
 

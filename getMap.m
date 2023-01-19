@@ -1,6 +1,10 @@
 function [E, x, y] = getMap(nPoints, xMax, yMax)
 % Generate the x and y coordinates of the vertices
-x = sort(xMax*rand(nPoints, 1));
+% xMid = floor(xMax/2);
+% yMid = floor(yMax/2);
+% x = [xMid; sort(xMax*rand(nPoints-1, 1))];
+% y = [yMid; yMax*rand(nPoints-1, 1)];
+x = xMax*rand(nPoints, 1);
 y = yMax*rand(nPoints, 1);
 
 % % Compute the Voronoi diagram
@@ -25,13 +29,32 @@ for i = 1:size(DT, 1)
     E(v3, v1) = 1;
 end
 
-% % Plot the Delaunay triangulation
+%% Plot the Delaunay triangulation
 % figure;
+% % axis equal
+% hold on
+% 
+% % rad = xMax/2.1;
+% % pos = [xMid-rad yMid-rad 2*rad 2*rad]; 
+% % rectangle('Position',pos,'Curvature',[1 1], 'FaceColor',[1 .9 .9],'EdgeColor','r')
+% % alpha(.5)
+% % 
+% % rad = xMax/3;
+% % pos = [xMid-rad yMid-rad 2*rad 2*rad]; 
+% % rectangle('Position',pos,'Curvature',[1 1], 'FaceColor',[0.9 1 .9],'EdgeColor','g')
+% % 
+% % 
+% rad = xMax/5;
+% pos = [xMid-rad yMid-rad 2*rad 2*rad]; 
+% rectangle('Position',pos,'Curvature',[1 1], 'FaceColor',[0.92 .92 1.0],'EdgeColor','b', 'LineWidth',1)
+% % alpha(.95)
+% 
 % triplot(DT, x, y, 'Color', 'k', 'LineWidth', 0.5);
 % hold on;
 % 
 % % Plot the points
 % plot(x, y, '.', 'Color', 'r', 'MarkerSize', 10);
+% plot(x(1), y(1), '.', 'Color', 'b', 'MarkerSize', 15);
 % 
 % % Set the axis limits
 % xlim([0 xMax]);
@@ -43,6 +66,9 @@ end
 % ylabel('Y');
 end
 
+
+
+%%
 % function E = getMap(nPoints, xRange, yRange)
 % 
 % E = zeros(nPoints);

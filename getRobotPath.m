@@ -1,18 +1,15 @@
-function path = getRobotPath(edges, startVertex, endVertex, A, B, oprAvail, maxWaits, maxTime, heuristic)
+function [path, Q, Qexp] = getRobotPath(edges, startVertex, endVertex, A, B, oprAvail, maxWaits, maxTime, heuristic)
 % 'method' argument specifies which algorithm to use for computing path
 % TODO: Greedy dijkstras is the one where we try to teleoperate whenever possible. 
 % If opr is not available, we check if it is faster to wait and then teleoperate.
 
-% Qexp = cell(1,1);
-% Qexp{1} = [startVertex, 0, maxWaits(startVertex), 0, 0, 0, 0, 0, 1, false]; % TODO: Remove this later.
 Qexp = [];
-% QSize = 10000;
-% QEmpty = repmat([0 10000 0 0 0 0 0 0 0], QSize,1);
-% Q = [startVertex, 0, maxWaits(startVertex), 0, 0, 0, 0, 0, 1]; % Elements are [vertex, arrival time, budget, previous edge, its arrival time, and wait done there, mode of operation from there to current vertex, index of predecessor node, index of current node]
-% Q = [Q; QEmpty];
-
 Q = cell(1, 1); % Initialize heap with starting vertex
 Q{1} = [startVertex, 0, maxWaits(startVertex), 0, 0, 0, 0, 0, 1, false, heuristic(startVertex), heuristic(startVertex)]; % Elements are [vertex, arrival time, budget, previous edge, its arrival time, and wait done there, mode of operation from there to current vertex, index of predecessor node, index of current node, visited flag]
+
+% Store all arrival time intervals for each vertex in a variable. This will be used to speed up refinement process.
+vertexArrivals = cell(size(A,1),1);
+vertexArrivals{startVertex} = [0, 0]; % Stores arrival time and budget pairs.
 
 % For now, implementing the priority Q as a matrix that we'll sort or find minimim from.
 % We can remove the previous vertex and its arrival time if we are using the node indices. Keeping them for testing and verification now.
@@ -24,7 +21,7 @@ while ~isempty(Q)
         break;
     end
     if bestNode(2) + heuristic(bestNode(1)) > maxTime
-        disp("Time's up!!")
+        disp("Time's up!! Ours")
         break;
     end
     if bestNode(10)
@@ -91,12 +88,12 @@ Qexp(end+1,:) = bestNode;
 end
 % Do whatever to get the path
 % Qexp = heapPush(Qexp, bestNode);
-Qexp(end+1,:) = bestNode;
+Qexp(end+1,:) = bestNode;  
 if bestNode(1) == endVertex
     path = getPath(Qexp, maxWaits);
 else
-    disp("Path not found.")
-    path = [];
+    disp("Path not found. Ours.")
+    path = [0 0 0 0];
 end
 end
 
@@ -111,14 +108,7 @@ function [departureTimes, finishTimes, modes, newBudgets] = edgeExplorationTimes
     modes = 0;
     newBudgets = budget;
     
-    % Check is operator is available right away
-%     [avail, bud] = edgeAvailability(teleopTime, arrivalTime, oprAvail, budget);
-%     if avail
-%         departureTimes(end+1) = arrivalTime;
-%         finishTimes(end+1) = arrivalTime + teleopTime;
-%         modes(end+1) = 1;
-%         newBudgets(end+1) = bud; 
-%     end
+    % Check if operator is available right away
     rank = find(oprAvail<=arrivalTime,1, 'last'); %rank of arrivalTime in oprAvail
     if isempty(rank)
         rank = 0;
@@ -130,7 +120,7 @@ function [departureTimes, finishTimes, modes, newBudgets] = edgeExplorationTimes
 %             break;
 %         end
 %     end
-    maxDepartureTime = arrivalTime + budget; % This is the max time we can depart at
+    maxDepartureTime = arrivalTime + min(autoTime-teleopTime, budget); % This is the max time we can depart at
     maxOprAvailIdx = find(oprAvail<=maxDepartureTime,1, "last");
     if mod(rank,2) == 1 % Means available right now
         times = [arrivalTime, oprAvail(rank+2:2:maxOprAvailIdx)];
@@ -138,7 +128,7 @@ function [departureTimes, finishTimes, modes, newBudgets] = edgeExplorationTimes
         times = [oprAvail(rank+1:2:maxOprAvailIdx)];
     end
     for currentTime = times
-        [avail, bud] = edgeAvailability(teleopTime, currentTime, oprAvail, maxDepartureTime-currentTime);
+        [avail, bud] = edgeAvailability(currentTime, currentTime+teleopTime, oprAvail, maxDepartureTime-currentTime);
         if avail
             departureTimes(end+1) = currentTime;
             finishTimes(end+1) = currentTime + teleopTime;
@@ -166,7 +156,7 @@ function [departureTimes, finishTimes, modes, newBudgets] = edgeExplorationTimes
 %     end
 end
 
-function [result, budget] = edgeAvailability(teleopTime, startTime, oprAvail, oldBudget)
+function [result, budget] = edgeAvailability(startTime, endTime, oprAvail, oldBudget)
     result = 0;
     budget = 0;
 %     rank = 0; %rank of startTime in oprAvail
@@ -182,12 +172,12 @@ function [result, budget] = edgeAvailability(teleopTime, startTime, oprAvail, ol
         rank = 0;
     end
     %rank2 = rank of startTime + teleopTime in oprAvail % We can also check if oprAvail(rank1) > startTime + teleopTime
-    if mod(rank, 2) == 1 && (rank == size(oprAvail,2) || oprAvail(rank+1) > startTime + teleopTime) % Is operator is available throughout the duration of the edge
+    if mod(rank, 2) == 1 && (rank == size(oprAvail,2) || oprAvail(rank+1) > endTime) % Is operator is available throughout the duration of the edge
         result = 1;
         if rank == size(oprAvail,2)
             budget = oldBudget;
         else
-            budget = min(oldBudget, oprAvail(rank+1) - 1 - (startTime + teleopTime)); % TODO: This will change if travel times are not constant.
+            budget = min(oldBudget, oprAvail(rank+1) - 1 - endTime); % TODO: This will change if travel times are not constant.
             % There's a -1 in the previous line because the availability changes at that time. So, the operator is available onlt until the time [oprAvail(rank+1) - 1]
         end
         % NOTE: The end time won't exceed the last element of oprAvail, which is selected to be a large number
