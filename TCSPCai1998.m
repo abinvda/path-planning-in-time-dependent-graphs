@@ -10,7 +10,9 @@ d_opt = Inf(nNodes,1);
 heaps = cell(nNodes,1);
 dm = Inf(nNodes,T+1);
 for x = 1:nNodes
-    heaps{x} = [0, dC(x,1)]; % [t, d(x,t)] % This is for t = 0
+%     heaps{x} = cell(1,1); 
+%     heaps{x}{1} = [0, dC(x,1)];
+    heaps{x} = [0, dC(x,1)]; %[t, d(x,t)] % This is for t = 0
     dm(x,1) = dC(x,1);
 end
 arrivalTimes = zeros(T*size(edges,1), 4); % [edgeStart, edgeEnd, arrivalAtStart, arrivalAtEnd]
@@ -64,16 +66,20 @@ for t = 1:T
         end
     end
     for y = 1:nNodes
+%         heaps{y} = heapPush(heaps{y}, [t, dC(y,t+1)]);
         heaps{y} = sortrows([heaps{y}; [t, dC(y,t+1)]], 2);
         if t > maxWaits(y)
             heaps{y}(heaps{y}(:,1) == t-maxWaits(y)-1, :) = []; % Delete from the heap, all entries with time = t-maxW-1
+%             heaps{y} = heapDelete(heaps{y}, t-maxWaits(y)-1);
         end
         heaps{y} = sortrows(heaps{y},2);
     end
     for y = 1:nNodes
+%         minNode = heapPop(heaps{y}); 
+%         uA = minNode(1); %
         uA = heaps{y}(1,1); % Time for minimum dC(y,t)
         if dC(y,uA+1) < Inf
-            dm(y,t+1) = max(t,dC(y,uA+1)); % This max operation stores the time taken instead of cost of travel.
+            dm(y,t+1) = max(t,dC(y,uA+1)); % This max operation (along with this if condition) stores the time taken instead of cost of travel.
 %         dm(y,t+1) = d(y,uA+1); % This gives cost of travel and is same as the paper
         end
     end
@@ -169,6 +175,94 @@ function path = getPath(startVertex, goalVertex, goalArrivalTime, d, arrivalTime
         end
         path = [currentNode(1), selectedPred(4), currentWait, mode; path];
         currentNode = selectedPred;
+    end
+end
+
+function heap = heapPush(heap, node)
+% Push a node onto the heap
+% The heap is sorted with increasing arrival time and if that's same then decreasing budget.
+if isempty(heap)
+    heap{1,1} = node;
+else
+    heap{end+1,1} = node; % Add the node to the end of the heap
+end
+idx = numel(heap); % Get the index of the new node
+while idx > 1 % While the node is not the root
+    parentIdx = floor(idx/2); % Get the index of the parent
+     if heap{parentIdx}(2) > heap{idx}(2)
+     % Swap the parent and the node
+        temp = heap{parentIdx};
+        heap{parentIdx} = heap{idx};
+        heap{idx} = temp;
+        idx = parentIdx; % Update the index of the node
+    else
+        break; % Heap property is restored, so exit loop
+    end
+end
+end
+
+function [node, heap] = heapPop(heap)
+% Pop the root node from the heap
+node = heap{1}; % Extract the root node
+heap{1} = heap{end}; % Replace the root with the last element
+heap(end) = []; % Remove the last element from the heap
+idx = 1; % Set the index of the node to the root
+while 2*idx <= numel(heap) % While the node has at least one child
+    childIdx = 2*idx; % Set the index of the child to the left child
+    if childIdx+1 <= numel(heap) % If the node has a right child
+        % Set the index of the child to the right child if it has a smaller arrival time
+        childIdx = childIdx + (heap{childIdx+1}(2) < heap{childIdx}(2));
+    end
+    g1 =  heap{childIdx}(2); % + heuristic(heap{childIdx}(1));
+    g2 = heap{idx}(2); % + heuristic(heap{idx}(1));
+    if g2 > g1
+    % Swap the child and the node
+        temp = heap{childIdx};
+        heap{childIdx} = heap{idx};
+        heap{idx} = temp;
+        idx = childIdx; % Update the index of the node
+    else
+        break; % Heap property is restored, so exit loop
+    end
+end
+end
+
+function heap = heapDelete(heap, x)
+    % Find all nodes that match the condition
+    deleteIndices = cellfun(@(node) node(1) == x, heap);
+    % Remove all matching nodes from the heap
+    heap(deleteIndices) = [];
+    % Rebuild the heap
+    heap = buildHeap(heap);
+end
+
+function heap = buildHeap(heap)
+    % Iterate through all nodes in the heap
+    for i = floor(numel(heap)/2):-1:1
+        % Call the heapify function to maintain the heap property
+        heap = heapify(heap, i);
+    end
+end
+
+function heap = heapify(heap, i)
+    % Get the indices of the left and right children
+    left = 2*i;
+    right = 2*i + 1;
+    % Find the index of the smallest value among the node and its children
+    if left <= numel(heap) && heap{left}(2) < heap{i}(2)
+        smallest = left;
+    else
+        smallest = i;
+    end
+    if right <= numel(heap) && heap{right}(2) < heap{smallest}(2)
+        smallest = right;
+    end
+    % If the node is not the smallest, swap it with its smallest child and recursively heapify the subtree
+    if smallest ~= i
+        temp = heap{i};
+        heap{i} = heap{smallest};
+        heap{smallest} = temp;
+        heap = heapify(heap, smallest);
     end
 end
 

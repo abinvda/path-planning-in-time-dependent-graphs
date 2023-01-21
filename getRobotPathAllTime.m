@@ -66,14 +66,14 @@ function [departureTimes, finishTimes, modes, newBudgets] = allExplorationTimes(
 % Given an edge, current time, budget and operator availability, compute which are all the departure times that we should be exploring
 % For autonomous travel, we don't need to wait at all, and all the waiting time can be stored in the budget. This way even if the final path requires autonomous travel with waiting, we can use the budget.    
 
-    departureTimes = zeros(maxWait+1,1); %arrivalTime; % Means no waiting
+    departureTimes = zeros(maxWait+1,1); %arrivalTime;
     finishTimes = zeros(maxWait+1,1); %arrivalTime + autoTime; % One node to always expand is autonomous mode with no waiting
     modes = zeros(maxWait+1,1); %0;
     newBudgets = zeros(maxWait+1,1); %maxWait;
-    rank = find(oprAvail<=arrivalTime,1, 'last'); %rank of arrivalTime in oprAvail
-    if isempty(rank)
-        rank = 0;
-    end
+%     rank = find(oprAvail<=arrivalTime,1, 'last'); %rank of arrivalTime in oprAvail
+%     if isempty(rank)
+%         rank = 0;
+%     end
     maxDepartureTime = arrivalTime + maxWait; % This is the max time we can depart at
 %     maxOprAvailIdx = find(oprAvail<=maxDepartureTime,1, "last");
 %     if mod(rank,2) == 1 % Means available right now

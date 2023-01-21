@@ -1,15 +1,19 @@
-function [path, Q, Qexp] = getRobotPath(edges, startVertex, endVertex, A, B, oprAvail, maxWaits, maxTime, heuristic)
+function [path, Q, Qexp] = getRobotPath(E, startVertex, endVertex, A, B, oprAvail, maxWaits, maxTime, heuristic, method)
 % 'method' argument specifies which algorithm to use for computing path
 % TODO: Greedy dijkstras is the one where we try to teleoperate whenever possible. 
 % If opr is not available, we check if it is faster to wait and then teleoperate.
 
+%% Convert oprAvail to edgeAvail
+edgeAvail = getEdgeBudgets(E, B, maxTime, oprAvail);
+
+%% Initialize Queue
 Qexp = [];
 Q = cell(1, 1); % Initialize heap with starting vertex
 Q{1} = [startVertex, 0, maxWaits(startVertex), 0, 0, 0, 0, 0, 1, false, heuristic(startVertex), heuristic(startVertex)]; % Elements are [vertex, arrival time, budget, previous edge, its arrival time, and wait done there, mode of operation from there to current vertex, index of predecessor node, index of current node, visited flag]
 
 % Store all arrival time intervals for each vertex in a variable. This will be used to speed up refinement process.
 vertexArrivals = cell(size(A,1),1);
-vertexArrivals{startVertex} = [0, 0]; % Stores arrival time and budget pairs.
+vertexArrivals{startVertex} = [0, maxWaits(startVertex)]; % Stores arrival time and budget pairs.
 
 % For now, implementing the priority Q as a matrix that we'll sort or find minimim from.
 % We can remove the previous vertex and its arrival time if we are using the node indices. Keeping them for testing and verification now.
@@ -24,11 +28,16 @@ while ~isempty(Q)
         disp("Time's up!! Ours")
         break;
     end
+    if method == "our" && ~any(ismember(vertexArrivals{bestNode(1)}, [bestNode(2) bestNode(3)], 'rows'))
+        bestNode(10) = 1;
+        continue;
+    end
     if bestNode(10)
         continue; % Skip this node if it has already been visited
     end
-    neighbours = edges(edges(:,1) == bestNode(1), 2); % In the edges matrix, find all where first element is the selected node
-    
+%     neighbours = edges(edges(:,1) == bestNode(1), 2); % In the edges matrix, find all where first element is the selected node
+    neighbours = find(E(bestNode(1),:))';
+
     arrivalTime = bestNode(2);
     budget = bestNode(3);
     autoTimes = A(bestNode(1), neighbours);
@@ -37,37 +46,45 @@ while ~isempty(Q)
 
     for i = 1:size(neighbours,1)
         e = neighbours(i);
+        if method == "noref" && size(unique(vertexArrivals{e},'rows'),1) ~= size(vertexArrivals{e},1)
+            aa = 1;
+        end
         % for each neighbour, determine the times for which to expand, using function edgeAvailability
-        [departureTimes, finishTimes, modes, newBudgets] = edgeExplorationTimes(arrivalTime, budget, autoTimes(i), teleopTimes(i), oprAvail); % finishTimes corresponding to those departureTimes and mode of operation
+%         [departureTimes, finishTimes, modes, newBudgets] = edgeExplorationTimes(arrivalTime, budget, autoTimes(i), teleopTimes(i), oprAvail); % finishTimes corresponding to those departureTimes and mode of operation
+        if method == "allT"
+            [departureTimes, finishTimes, modes, newBudgets] = allExplorationTimes(bestNode(1), e, arrivalTime, budget, autoTimes(i), teleopTimes(i), oprAvail, edgeAvail);
+            newBudgets = newBudgets + maxWaits(e);
+            if ~isempty(vertexArrivals{e})
+                [departureTimes, finishTimes, modes, newBudgets] = nodeRefinementAllT(vertexArrivals{e}, departureTimes, finishTimes, modes, newBudgets);
+            end
+        else
+            [departureTimes, finishTimes, modes, newBudgets] = criticalExplorationTimes(bestNode(1), e, arrivalTime, budget, autoTimes(i), teleopTimes(i), oprAvail, edgeAvail); % finishTimes corresponding to those departureTimes and mode of operation
+            newBudgets = newBudgets + maxWaits(e);
+            if method == "noref" && ~isempty(vertexArrivals{e})
+                [departureTimes, finishTimes, modes, newBudgets] = nodeRefinementNoRef(vertexArrivals{e}, departureTimes, finishTimes, modes, newBudgets);
+            end
+        end
         % add these neighbours to priorityQ with respective travel times
         for j = 1:size(departureTimes,2)
             wait = departureTimes(j) - bestNode(2);
-            newBudget = newBudgets(j) + maxWaits(e);
-            % We use the function below to check if the same node is present or if new one has higher budget
-            [better, location, indices] = isBetterNodePresent(Q, [e, finishTimes(j), newBudget]);
-            if better == 0
-%                 indices = findWorseNodes(Q, [e, finishTimes(j), newBudget]);
-%                 tt = 0;
-%                 for in = indices'
-%                     if Q{in,1}(10) == 0
-%                         tt = tt + 1;
-%                     end
-% %                     Q{in,1}(10) = true;
-%                 end
-%                 if tt > 1
-%                     for in = indices'
-%                         Q{in,1}
-%                     end
-%                     aa = 1
-%                 end
-                for in = indices'
-                    Q{in,1}(10) = true;
-                end
-%                 if location ~= 0 % location is the index of worse node
-%                     Q{location}(10) = true; % set it to visited so we don't explore it.
-%                 end
+            newBudget = newBudgets(j);
+            if method == "noref"
                 maxIndex = maxIndex+1;
+                vertexArrivals{e} = [vertexArrivals{e}; [finishTimes(j), newBudget]];
                 Q = heapPush(Q, [e, finishTimes(j), newBudget, bestNode(1), bestNode(2), wait, modes(j), bestNode(9), maxIndex, false, heuristic(e), finishTimes(j)+heuristic(e)], heuristic);
+            elseif method == "allT"
+                maxIndex = maxIndex+1;
+                vertexArrivals{e} = [vertexArrivals{e}; [finishTimes(j), newBudget]];
+                Q = heapPush(Q, [e, finishTimes(j), newBudget, bestNode(1), bestNode(2), wait, modes(j), bestNode(9), maxIndex, false, heuristic(e), finishTimes(j)+heuristic(e)], heuristic);
+            else
+                % We use the function below to check if the same node is present or if new one has higher budget
+                [better, newRanges] = nodeRefinement(vertexArrivals{e}, finishTimes(j), newBudget);
+    %             [better, location, indices] = isBetterNodePresent(Q, [e, finishTimes(j), newBudget]);
+                if better == 0
+                    vertexArrivals{e} = newRanges;
+                    maxIndex = maxIndex+1;
+                    Q = heapPush(Q, [e, finishTimes(j), newBudget, bestNode(1), bestNode(2), wait, modes(j), bestNode(9), maxIndex, false, heuristic(e), finishTimes(j)+heuristic(e)], heuristic);
+                end
             end
         end
     end
@@ -78,7 +95,7 @@ while ~isempty(Q)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % Later on we can also think of getting an approximation algorithms, by solving static graph with both autonomous and teleoperated costs.
     % This will give is min and max cost from a vertex to the goal.
-    % So, we can use these to eliminate vertices from the search for which things are not very good
+    % So, we can use these to eliminate vertices from the search for which things are not within range
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     
     % Add this explored node to a separate list, which we'll use later to find the path
@@ -99,7 +116,7 @@ end
 
 
 %% TODO: Function to compute opr availability for a given edge at a given time
-function [departureTimes, finishTimes, modes, newBudgets] = edgeExplorationTimes(arrivalTime, budget, autoTime, teleopTime, oprAvail)
+function [departureTimes, finishTimes, modes, newBudgets] = criticalExplorationTimes(x,y,arrivalTime, budget, autoTime, teleopTime, oprAvail, edgeAvail)
 % Given an edge, current time, budget and operator availability, compute which are all the departure times that we should be exploring
 % For autonomous travel, we don't need to wait at all, and all the waiting time can be stored in the budget. This way even if the final path requires autonomous travel with waiting, we can use the budget.    
 
@@ -113,75 +130,112 @@ function [departureTimes, finishTimes, modes, newBudgets] = edgeExplorationTimes
     if isempty(rank)
         rank = 0;
     end
-    %     for i = 1:size(oprAvail,2) % For large oprAvail vectors, we can also do something like a binary search or other methods of finding rank in an ordered list
-%         if oprAvail(i) <= arrivalTime
-%             rank = rank + 1;
-%         else
-%             break;
-%         end
-%     end
-    maxDepartureTime = arrivalTime + min(autoTime-teleopTime, budget); % This is the max time we can depart at
+    maxDepartureTime = min(size(edgeAvail,3)-1, arrivalTime + min(autoTime-teleopTime, budget)); % This is the max time we can depart at
     maxOprAvailIdx = find(oprAvail<=maxDepartureTime,1, "last");
     if mod(rank,2) == 1 % Means available right now
         times = [arrivalTime, oprAvail(rank+2:2:maxOprAvailIdx)];
     else % Means operator not available currently
         times = [oprAvail(rank+1:2:maxOprAvailIdx)];
     end
+%     possibleTimes = edgeAvail(x,y,arrivalTime+1:maxDepartureTime+1);
+%     possibleTimes = reshape(possibleTimes, 1, size(possibleTimes,3));
+%     traversableTimes = find(possibleTimes > -1);
     for currentTime = times
-        [avail, bud] = edgeAvailability(currentTime, currentTime+teleopTime, oprAvail, maxDepartureTime-currentTime);
-        if avail
+%         [avail, bud] = edgeAvailability(currentTime, currentTime+teleopTime, oprAvail, maxDepartureTime-currentTime);
+%         [avail, bud] = getEdgeBudget(x,y,startTime,A,B,edgeAvail);
+        bud = edgeAvail(x,y,currentTime+1);
+        % Can avoid this for loop by using buds = edgeAvail(edgeAvail(x,y,times+1)> -1);
+        if bud >= 0
             departureTimes(end+1) = currentTime;
             finishTimes(end+1) = currentTime + teleopTime;
             modes(end+1) = 1;
-            newBudgets(end+1) = bud; 
+            wait = currentTime - arrivalTime; 
+            newBudgets(end+1) = min(bud, budget - wait); 
         end
     end
-%     oprAvailIdx = min(size(oprAvail, 2), rank + 1);
-%     currentTime = oprAvail(oprAvailIdx);
-%     while currentTime <= maxTime
-%         if mod(oprAvailIdx, 2) == 1
-%             [avail, bud] = edgeAvailability(teleopTime, currentTime, oprAvail, maxTime-currentTime);
-%             if avail
-%                 departureTimes(end+1) = currentTime;
-%                 finishTimes(end+1) = currentTime + teleopTime;
-%                 modes(end+1) = 1;
-%                 newBudgets(end+1) = bud; 
-%             end
-%         end
-%         oprAvailIdx = oprAvailIdx + 1;
-%         if oprAvailIdx > size(oprAvail, 2)
-%             break;
-%         end
-%         currentTime = oprAvail(oprAvailIdx);
-%     end
+    [~,uniqueID,~] = unique([finishTimes; newBudgets]','rows');
+    if numel(uniqueID) ~= numel(finishTimes)
+        departureTimes = departureTimes(uniqueID);
+        finishTimes = finishTimes(uniqueID);
+        modes = modes(uniqueID);
+        newBudgets = newBudgets(uniqueID);
+    end
 end
 
-function [result, budget] = edgeAvailability(startTime, endTime, oprAvail, oldBudget)
-    result = 0;
-    budget = 0;
-%     rank = 0; %rank of startTime in oprAvail
-%     for i = 1:size(oprAvail,2) % For large oprAvail vectors, we can also do something like a binary search or other methods of finding rank in an ordered list
-%         if oprAvail(i) <= startTime
-%             rank = rank + 1;
-%         else
-%             break;
-%         end
-%     end
-    rank = find(oprAvail<=startTime,1, 'last'); %rank of arrivalTime in oprAvail
-    if isempty(rank)
-        rank = 0;
+function [departureTimes, finishTimes, modes, newBudgets] = allExplorationTimes(x,y,arrivalTime, maxWait, autoTime, teleopTime, oprAvail, edgeAvail)
+% This explores all times within arrival time and wait time
+    maxDepartureTime = min(size(edgeAvail,3)-1, arrivalTime + maxWait);
+    times = arrivalTime:maxDepartureTime;
+    
+    departureTimes = Inf(1, size(times,2));
+    finishTimes = Inf(1, size(times,2)); 
+    modes = Inf(1, size(times,2));
+    newBudgets = Inf(1, size(times,2));
+        
+    for i = 1:size(times,2)
+        currentTime = times(i);
+        departureTimes(i) = currentTime;
+        finishTimes(i) = currentTime + autoTime;
+        modes(i) = 0;
+        newBudgets(i) = 0; 
     end
-    %rank2 = rank of startTime + teleopTime in oprAvail % We can also check if oprAvail(rank1) > startTime + teleopTime
-    if mod(rank, 2) == 1 && (rank == size(oprAvail,2) || oprAvail(rank+1) > endTime) % Is operator is available throughout the duration of the edge
-        result = 1;
-        if rank == size(oprAvail,2)
-            budget = oldBudget;
-        else
-            budget = min(oldBudget, oprAvail(rank+1) - 1 - endTime); % TODO: This will change if travel times are not constant.
-            % There's a -1 in the previous line because the availability changes at that time. So, the operator is available onlt until the time [oprAvail(rank+1) - 1]
+
+    possibleTimes = edgeAvail(x,y,arrivalTime+1:maxDepartureTime+1);
+    possibleTimes = reshape(possibleTimes, 1, size(possibleTimes,3));
+    traversableTimes = arrivalTime + find(possibleTimes > -1) - 1;
+    
+    if ~isempty(traversableTimes)
+        departureTimes = [departureTimes, Inf(1, size(traversableTimes,2))];
+        finishTimes = [finishTimes, Inf(1, size(traversableTimes,2))];
+        modes = [modes, Inf(1, size(traversableTimes,2))];
+        newBudgets = [newBudgets, Inf(1, size(traversableTimes,2))];
+
+        for i = 1:size(traversableTimes,2)
+            currentTime = traversableTimes(i);
+            departureTimes(i+size(times,2)) = currentTime;
+            finishTimes(i+size(times,2)) = currentTime + teleopTime;
+            modes(i+size(times,2)) = 1;
+            newBudgets(i+size(times,2)) = 0;
         end
-        % NOTE: The end time won't exceed the last element of oprAvail, which is selected to be a large number
     end
+end
+
+% function [result, budget] = edgeAvailability(startTime, endTime, oprAvail, oldBudget)
+%     result = 0;
+%     budget = 0;
+%     rank = find(oprAvail<=startTime,1, 'last'); %rank of arrivalTime in oprAvail
+%     if isempty(rank)
+%         rank = 0;
+%     end
+%     %rank2 = rank of startTime + teleopTime in oprAvail % We can also check if oprAvail(rank1) > startTime + teleopTime
+%     if mod(rank, 2) == 1 && (rank == size(oprAvail,2) || oprAvail(rank+1) > endTime) % Is operator is available throughout the duration of the edge
+%         result = 1;
+%         if rank == size(oprAvail,2)
+%             budget = oldBudget;
+%         else
+%             budget = min(oldBudget, oprAvail(rank+1) - 1 - endTime); % TODO: This will change if travel times are not constant.
+%             % There's a -1 in the previous line because the availability changes at that time. So, the operator is available onlt until the time [oprAvail(rank+1) - 1]
+%         end
+%         % NOTE: The end time won't exceed the last element of oprAvail, which is selected to be a large number
+%     end
+% end
+
+
+function newE = getEdgeBudgets(E, B, T, oprAvail)
+    newE = -1*ones(size(B,1),size(B,2), T+1);
+    for i = 1:ceil(size(oprAvail,2)/2)
+        tCurr = oprAvail(2*i-1); % This only works if oprAvaila has even number of elements, i.e., in the end we get unavailable operator
+        if tCurr > T
+            break;
+        end
+        changeTime = oprAvail(2*i);
+        for t = tCurr:changeTime-1
+            % For all elements less than changeTime-t-1 add an edge
+            value = changeTime-1-t; % -1 because the availabilty changes at changeTime, so we can only assist until 1 unit before
+            currE = (B <= value) .* (value-B) .* E;
+            newE(:,:,t+1) = currE - (B>value); % t+1 because we start with t=0
+        end
+    end 
 end
 
 function path = getPath(Qexp, maxWaits)
@@ -258,112 +312,6 @@ while 2*idx <= numel(heap) % While the node has at least one child
 end
 end
 
-% function heap = heapDelete(heap, delete_idx)
-% %DELETE Delete an entry from a binary heap at a given location
-% %   heap: cell array representing the heap
-% %   delete_idx: index of the entry to be deleted
-% 
-% % Delete the entry at the given index
-% heap{delete_idx} = heap{end};
-% heap(end) = [];
-% 
-% % Maintain the heap property by repeatedly swapping the entry at the delete index with its smaller child
-% while true
-%     left_child_idx = 2 * delete_idx;
-%     right_child_idx = 2 * delete_idx + 1;
-% 
-%     if left_child_idx > numel(heap)
-%         % There are no more children, so we can exit the loop
-%         break;
-%     elseif right_child_idx > numel(heap)
-%         % There is only a left child, so compare the entry to the left child and we need only one swap
-%         if heap{delete_idx}(2) > heap{left_child_idx}(2) || (heap{delete_idx}(2) == heap{left_child_idx}(2) && heap{delete_idx}(3) < heap{left_child_idx}(3))
-%             temp = heap{delete_idx};
-%             heap{delete_idx} = heap{left_child_idx};
-%             heap{left_child_idx} = temp;
-%         end
-%         break;
-%     else
-%         % There are both left and right children, so compare the entry to the smaller of the two
-%         if heap{left_child_idx}(2) < heap{right_child_idx}(2) || (heap{left_child_idx}(2) == heap{right_child_idx}(2) && heap{left_child_idx}(3) > heap{right_child_idx}(3))
-%             if heap{delete_idx}(2) > heap{left_child_idx}(2)
-%                 heap = swap(heap, delete_idx, left_child_idx);
-%                 delete_idx = left_child_idx;
-%             else
-%                 break;
-%             end
-%         else
-%             if heap{delete_idx}(2) > heap{right_child_idx}(2)
-%                 heap = swap(heap, delete_idx, right_child_idx);
-%                 delete_idx = right_child_idx;
-%             else
-%                 break;
-%             end
-%         end
-%     end
-% end
-% end
-
-% function heap = delete(heap, delete_idx)
-% %DELETE Delete an entry from a binary heap at a given location
-% %   heap: cell array representing the heap
-% %   delete_idx: index of the entry to be deleted
-% 
-% % Delete the entry at the given index
-% heap{delete_idx} = heap{end};
-% heap(end) = [];
-% 
-% % Maintain the heap property by repeatedly swapping the entry at the delete index with its parent
-% % if the parent has a larger arrival time or budget than the entry, or with its child if the entry has a smaller arrival time or budget
-% while true
-%     % Calculate the index of the parent node
-%     parent_idx = floor(delete_idx / 2);
-%     
-%     if delete_idx > 1 && (heap{parent_idx}(2) > heap{delete_idx}(2) || (heap{parent_idx}(2) == heap{delete_idx}(2) && heap{parent_idx}(3) < heap{delete_idx}(3)))
-%         % The entry has a smaller arrival time or equal arrival time and a larger budget than the parent, so swap them
-%         heap = swap(heap, parent_idx, delete_idx);
-%         delete_idx = parent_idx; % Update the index of the entry
-%     else
-%         % The heap property has been restored, so we can exit the loop
-%         break;
-%     end
-% end
-% while true
-%     left_child_idx = 2 * delete_idx;
-%     right_child_idx = 2 * delete_idx + 1;
-% 
-%     if left_child_idx > numel(heap)
-%         % There are no more children, so we can exit the loop
-%         break;
-%     elseif right_child_idx > numel(heap)
-%         % There is only a left child, so compare the entry to the left child and we need only one swap
-%         if heap{delete_idx}(2) > heap{left_child_idx}(2) || (heap{delete_idx}(2) == heap{left_child_idx}(2) && heap{delete_idx}(3) < heap{left_child_idx}(3))
-%             temp = heap{delete_idx};
-%             heap{delete_idx} = heap{left_child_idx};
-%             heap{left_child_idx} = temp;
-%         end
-%         break;
-%     else
-%         % There are both left and right children, so compare the entry to the smaller of the two
-%         if heap{left_child_idx}(2) < heap{right_child_idx}(2) || (heap{left_child_idx}(2) == heap{right_child_idx}(2) && heap{left_child_idx}(3) > heap{right_child_idx}(3))
-%             if heap{delete_idx}(2) > heap{left_child_idx}(2)
-%                 heap = swap(heap, delete_idx, left_child_idx);
-%                 delete_idx = left_child_idx;
-%             else
-%                 break;
-%             end
-%         else
-%             if heap{delete_idx}(2) > heap{right_child_idx}(2)
-%                 heap = swap(heap, delete_idx, right_child_idx);
-%                 delete_idx = right_child_idx;
-%             else
-%                 break;
-%             end
-%         end
-%     end
-% end
-% end
-
 function [better, location, locations] = isBetterNodePresent(heap, node)
 % Check if the node with the same first three elements is present in the heap
 % TODO: Also add other conditions to ignore nodes
@@ -418,6 +366,43 @@ for i = 1:numel(heap) % Iterate through all elements in the heap
 end
 end
 
+function [better, allRanges] = nodeRefinement(allRanges, t, b)
+% returns 0, 1: 1 for better in Q, 0 for non-enclosing or worse node in Q
+% indices are the indices of nodes in llRanges that are worse than the current one
+    better = 0;
+    indices = [];
+    for i = 1:size(allRanges,1)
+        tb = allRanges(i,:);
+        if tb(1) <= t && tb(1) + tb(2) >= t + b
+            better = 1;
+            break;
+        elseif tb(1) >= t && tb(1) + tb(2) <= t + b
+            indices = [indices; i];
+%         else
+%             better = 0;
+        end
+    end
+    if better == 0
+        allRanges(indices,:) = [];
+        allRanges(end+1,:) = [t b];
+    end
+end
+
+function [departureTimes, finishTimes, modes, newBudgets] = nodeRefinementAllT(existingTimes, departureTimes, finishTimes, modes, newBudgets)
+    id = ~ismember(finishTimes, existingTimes(:,1));
+    finishTimes = finishTimes(id);
+    departureTimes = departureTimes(id);
+    modes = modes(id);
+    newBudgets = newBudgets(id);
+end
+
+function [departureTimes2, finishTimes2, modes2, newBudgets2] = nodeRefinementNoRef(existingTimes, departureTimes, finishTimes, modes, newBudgets)
+    id = ~ismember([finishTimes; newBudgets]', existingTimes, 'rows');    
+    departureTimes2 = departureTimes(id);
+    modes2 = modes(id);
+    newBudgets2 = newBudgets(id);
+    finishTimes2 = finishTimes(id);
+end
 
 function entries = heap_to_matrix(Q)
 %HEAP_TO_MATRIX Convert a binary heap into a matrix
@@ -431,7 +416,7 @@ entries = zeros(numel(Q), numel(Q{1}));
 for i = 1:numel(Q)
     entries(i, :) = Q{i};
 end
-entries = sortrows(entries, [2,1,3,10]);
+entries = sortrows(entries, [2,1,3,12]);
 end
 
 function indices = findWorseNodes(Q, node)
