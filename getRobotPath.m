@@ -1,14 +1,30 @@
-function [path, Q, Qexp] = getRobotPath(E, startVertex, endVertex, A, B, oprAvail, maxWaits, maxTime, heuristic, method)
+function [path, Q, Qexp, redundantNodeCount] = getRobotPath(E, startVertex, endVertex, A, B, oprAvail, edgeAvail, maxWaits, maxTime, heuristic, method)
 % 'method' argument specifies which algorithm to use for computing path
 % TODO: Greedy dijkstras is the one where we try to teleoperate whenever possible. 
 % If opr is not available, we check if it is faster to wait and then teleoperate.
 
 %% Convert oprAvail to edgeAvail
-edgeAvail = getEdgeBudgets(E, B, maxTime, oprAvail);
+% edgeAvail = getEdgeBudgets(E, B, maxTime, oprAvail);
+
+%% Variables to store the isVisited flag
+if method == "allT"
+    isVisited = zeros(size(E,1), maxTime+1); % (vertex, arrival time) % First one is for t=0 % Can also use sparse matrix
+    isVisited(startVertex, 1) = 1;
+elseif method == "noref"
+    isVisited = zeros(size(E,1), maxTime+1, maxTime+1); % (vertex, arrival time, budget)
+    isVisited(startVertex, 1, maxWaits(startVertex)+1) = 1;
+elseif method == "our"
+    isVisited = zeros(size(E,1), maxTime+1); % (vertex, arrival time) % First one is for t=0 % Stores if a time is already included by a node
+    isVisited(startVertex, 1:maxWaits(startVertex)+1) = 1;
+end
+redundantNodeCount = 0; % This stores how many nodes were removed in the refinement step
 
 %% Initialize Queue
 Qexp = [];
 Q = cell(1, 1); % Initialize heap with starting vertex
+% [p, ~,~] = fastestTaskDijkstras(startVertex, endVertex, A, B, edgeAvail, maxWaits, heuristic, 0);
+% heur = p(end,2);
+% Q{1} = [startVertex, 0, maxWaits(startVertex), 0, 0, 0, 0, 0, 1, false, heur, heur]; % Elements are [vertex, arrival time, budget, previous edge, its arrival time, and wait done there, mode of operation from there to current vertex, index of predecessor node, index of current node, visited flag]
 Q{1} = [startVertex, 0, maxWaits(startVertex), 0, 0, 0, 0, 0, 1, false, heuristic(startVertex), heuristic(startVertex)]; % Elements are [vertex, arrival time, budget, previous edge, its arrival time, and wait done there, mode of operation from there to current vertex, index of predecessor node, index of current node, visited flag]
 
 % Store all arrival time intervals for each vertex in a variable. This will be used to speed up refinement process.
@@ -24,16 +40,21 @@ while ~isempty(Q)
     if bestNode(1) == endVertex
         break;
     end
-    if bestNode(2) + heuristic(bestNode(1)) > maxTime
-        disp("Time's up!! Ours")
+    if bestNode(2) > maxTime
+        disp("Time's up!! " + method)
         break;
     end
-    if method == "our" && ~any(ismember(vertexArrivals{bestNode(1)}, [bestNode(2) bestNode(3)], 'rows'))
+    if bestNode(10) % Probably not required with new implementation
+        continue; % Skip this node if it has already been visited
+    end
+    if method == "our" && all(isVisited(bestNode(1), bestNode(2)+1:bestNode(2)+bestNode(3)+1) == Inf)
+        % ~any(ismember(vertexArrivals{bestNode(1)}, [bestNode(2) bestNode(3)], 'rows'))
+%         redundantNodeCount = redundantNodeCount + 1; % Means this node's arrival time window was already covered by another
         bestNode(10) = 1;
         continue;
     end
-    if bestNode(10)
-        continue; % Skip this node if it has already been visited
+    if method == "our"
+        isVisited(bestNode(1), bestNode(2)+1:bestNode(2)+bestNode(3)+1) = Inf; % Signifies that these times have been explored
     end
 %     neighbours = edges(edges(:,1) == bestNode(1), 2); % In the edges matrix, find all where first element is the selected node
     neighbours = find(E(bestNode(1),:))';
@@ -46,23 +67,20 @@ while ~isempty(Q)
 
     for i = 1:size(neighbours,1)
         e = neighbours(i);
-        if method == "noref" && size(unique(vertexArrivals{e},'rows'),1) ~= size(vertexArrivals{e},1)
-            aa = 1;
-        end
         % for each neighbour, determine the times for which to expand, using function edgeAvailability
 %         [departureTimes, finishTimes, modes, newBudgets] = edgeExplorationTimes(arrivalTime, budget, autoTimes(i), teleopTimes(i), oprAvail); % finishTimes corresponding to those departureTimes and mode of operation
         if method == "allT"
             [departureTimes, finishTimes, modes, newBudgets] = allExplorationTimes(bestNode(1), e, arrivalTime, budget, autoTimes(i), teleopTimes(i), oprAvail, edgeAvail);
             newBudgets = newBudgets + maxWaits(e);
-            if ~isempty(vertexArrivals{e})
-                [departureTimes, finishTimes, modes, newBudgets] = nodeRefinementAllT(vertexArrivals{e}, departureTimes, finishTimes, modes, newBudgets);
-            end
+%             if ~isempty(vertexArrivals{e})
+%                 [departureTimes, finishTimes, modes, newBudgets] = nodeRefinementAllT(vertexArrivals{e}, departureTimes, finishTimes, modes, newBudgets);
+%             end
         else
             [departureTimes, finishTimes, modes, newBudgets] = criticalExplorationTimes(bestNode(1), e, arrivalTime, budget, autoTimes(i), teleopTimes(i), oprAvail, edgeAvail); % finishTimes corresponding to those departureTimes and mode of operation
             newBudgets = newBudgets + maxWaits(e);
-            if method == "noref" && ~isempty(vertexArrivals{e})
-                [departureTimes, finishTimes, modes, newBudgets] = nodeRefinementNoRef(vertexArrivals{e}, departureTimes, finishTimes, modes, newBudgets);
-            end
+%             if method == "noref" && ~isempty(vertexArrivals{e})
+%                 [departureTimes, finishTimes, modes, newBudgets] = nodeRefinementNoRef(vertexArrivals{e}, departureTimes, finishTimes, modes, newBudgets);
+%             end
         end
         % add these neighbours to priorityQ with respective travel times
         for j = 1:size(departureTimes,2)
@@ -70,20 +88,46 @@ while ~isempty(Q)
             newBudget = newBudgets(j);
             if method == "noref"
                 maxIndex = maxIndex+1;
-                vertexArrivals{e} = [vertexArrivals{e}; [finishTimes(j), newBudget]];
-                Q = heapPush(Q, [e, finishTimes(j), newBudget, bestNode(1), bestNode(2), wait, modes(j), bestNode(9), maxIndex, false, heuristic(e), finishTimes(j)+heuristic(e)], heuristic);
+%                 vertexArrivals{e} = [vertexArrivals{e}; [finishTimes(j), newBudget]];
+                newBudget = min(maxTime, newBudget); 
+                if finishTimes(j) <= maxTime && isVisited(e, finishTimes(j)+1, newBudget+1) == 0
+                    Q = heapPush(Q, [e, finishTimes(j), newBudget, bestNode(1), bestNode(2), wait, modes(j), bestNode(9), maxIndex, false, heuristic(e), finishTimes(j)+heuristic(e)]);
+                    isVisited(e, finishTimes(j)+1, newBudget+1) = 1;
+                end
             elseif method == "allT"
                 maxIndex = maxIndex+1;
-                vertexArrivals{e} = [vertexArrivals{e}; [finishTimes(j), newBudget]];
-                Q = heapPush(Q, [e, finishTimes(j), newBudget, bestNode(1), bestNode(2), wait, modes(j), bestNode(9), maxIndex, false, heuristic(e), finishTimes(j)+heuristic(e)], heuristic);
-            else
+%                 vertexArrivals{e} = [vertexArrivals{e}; [finishTimes(j), newBudget]];
+                if finishTimes(j) <= maxTime && isVisited(e,finishTimes(j)+1) == 0
+                    Q = heapPush(Q, [e, finishTimes(j), newBudget, bestNode(1), bestNode(2), wait, modes(j), bestNode(9), maxIndex, false, heuristic(e), finishTimes(j)+heuristic(e)]);
+                    isVisited(e,finishTimes(j)+1) = 1;
+                end
+            else % method == "our"
                 % We use the function below to check if the same node is present or if new one has higher budget
-                [better, newRanges] = nodeRefinement(vertexArrivals{e}, finishTimes(j), newBudget);
-    %             [better, location, indices] = isBetterNodePresent(Q, [e, finishTimes(j), newBudget]);
-                if better == 0
-                    vertexArrivals{e} = newRanges;
-                    maxIndex = maxIndex+1;
-                    Q = heapPush(Q, [e, finishTimes(j), newBudget, bestNode(1), bestNode(2), wait, modes(j), bestNode(9), maxIndex, false, heuristic(e), finishTimes(j)+heuristic(e)], heuristic);
+%                 [better, newRanges] = nodeRefinement(vertexArrivals{e}, finishTimes(j), newBudget);
+%     %             [better, location, indices] = isBetterNodePresent(Q, [e, finishTimes(j), newBudget]);
+%                 if better == 0
+%                     vertexArrivals{e} = newRanges;
+%                     maxIndex = maxIndex+1;
+%                     Q = heapPush(Q, [e, finishTimes(j), newBudget, bestNode(1), bestNode(2), wait, modes(j), bestNode(9), maxIndex, false, heuristic(e), finishTimes(j)+heuristic(e)], heuristic);
+%                 end
+                maxIndex = maxIndex+1;
+                newBudget = min(maxTime-finishTimes(j), newBudget); 
+                if finishTimes(j) <= maxTime && ~all(isVisited(e, finishTimes(j)+1: finishTimes(j)+newBudget+1))
+%                     [p,~,~] = fastestTaskDijkstras(e, endVertex, A, B, edgeAvail, maxWaits, heuristic, finishTimes(j));
+%                     heur = p(end,2) - finishTimes(j); % Time taken to finish from current time % It gives us an upper bound on the cost (not an admissible heuristic)
+                    heur = heuristic(e);
+%                     Q = heapPush(Q, [e, finishTimes(j), newBudget, bestNode(1), bestNode(2), wait, modes(j), bestNode(9), maxIndex, false, heur, finishTimes(j)+heur]);
+                    Q = heapPush(Q, [e, finishTimes(j), newBudget, bestNode(1), bestNode(2), wait, modes(j), bestNode(9), maxIndex, false, heur, finishTimes(j)+heur]);
+                    
+                   if any(isVisited(e, finishTimes(j)+1:  finishTimes(j)+newBudget+1))
+                        nBlocks = count_blocks(isVisited(e, finishTimes(j)+1:  finishTimes(j)+newBudget+1));
+                        redundantNodeCount = redundantNodeCount + nBlocks;
+                    end
+                    % Mark the arrival time range for this node in the isVisited variable
+                    isVisited(e, finishTimes(j)+1:  finishTimes(j)+newBudget+1) = 1;
+                    
+%                 elseif finishTimes(j) <= maxTime
+%                     aa = 1;
                 end
             end
         end
@@ -109,7 +153,7 @@ Qexp(end+1,:) = bestNode;
 if bestNode(1) == endVertex
     path = getPath(Qexp, maxWaits);
 else
-    disp("Path not found. Ours.")
+    disp("Path not found: " + method)
     path = [0 0 0 0];
 end
 end
@@ -257,7 +301,7 @@ function path = getPath(Qexp, maxWaits)
     end
 end
 
-function heap = heapPush(heap, node, heuristic)
+function heap = heapPush(heap, node)
 % Push a node onto the heap
 % The heap is sorted with increasing arrival time and if that's same then decreasing budget.
 if isempty(heap)
@@ -438,4 +482,25 @@ while i <= numel(Q) % While the current node is within the bounds of the heap
     i = i + 1; % Move to the next node
 end
 
+end
+
+function num_blocks = count_blocks(vector)
+    num_blocks = 0;
+    in_block = false;
+    for i = 1:length(vector)
+        if vector(i) == 1
+            if ~in_block
+                num_blocks = num_blocks + 1;
+                in_block = true;
+            end
+        else
+            in_block = false;
+        end
+    end
+    if vector(1) == 1
+        num_blocks = num_blocks - 1;
+    end
+    if vector(end) == 1
+        num_blocks = num_blocks - 1;
+    end
 end

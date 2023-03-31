@@ -1,8 +1,9 @@
-function path = TCSPCai1998(edges, startVertex, goalVertex, A, B, oprAvail, maxWaits, T)
+function path = TCSPCai1998(edges, startVertex, goalVertex, A, B, oprAvail, edgeAvail, maxWaits, T)
 
 nNodes = size(A,1);
 %% Convert oprAvail to edgeAvail
-edgeAvail = edgeAvailability(B, T, oprAvail);
+% edgeAvail = edgeAvailability(B, T, oprAvail);
+
 %% Initialize
 dC = Inf(nNodes, T+1); % Stores cost to a node (row) of at max time t (column), t = [0,T]
 dC(startVertex,1) = 0; % Corresponds to d(s,0)

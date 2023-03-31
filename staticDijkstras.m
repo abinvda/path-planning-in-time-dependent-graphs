@@ -17,6 +17,9 @@ Q{1} = [startVertex, arrivalTimes(startVertex)];
 while ~isempty(Q)
     % Pop the best element from the Q
     [bestNode, Q] = heapPop(Q);
+    if done(bestNode(1)) == 1
+        continue;
+    end
     done(bestNode(1)) = 1;
     if ~all
         if bestNode(1) == goalVertex
@@ -44,7 +47,7 @@ if ~all
     if bestNode(1) == goalVertex
         path = getPathStatic(predecessors, arrivalTimes, startVertex, goalVertex);
     else
-        disp("Path not found.")
+        disp("Static Path not found.")
         path = [];
     end
 else
