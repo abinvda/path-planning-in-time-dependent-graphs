@@ -3,10 +3,10 @@ clear; close;
 
 % textprogressbar('Progress: ');
 % Define test parameters
-numVertices = [4, 100, 225];%, 169, 225];%, 150, 200];
-distanceRange = [000, 200000];% 5000, 10000];%; 600, 1000; 0, 1000];
+numVertices = [64, 100, 225];%, 169, 225];%, 150, 200];
+distanceRange = [2000, 200000];% 5000, 10000];%; 600, 1000; 0, 1000];
 numMaps = 10;
-numTests = 50;
+numTests = 100;
 
 % Initialize variables to store results
 results = cell(12,1); % A cell to contain 8 results (times, nodes etc.) and 1 for test parameters
@@ -119,12 +119,12 @@ for i = 1:length(numVertices)
 %             teleSpeed = autoSpeed + max(1, normrnd(5, 0.5, [nNodes, nNodes])); %+ 20*rand(nNodes, nNodes) + 10; %20*rand(nNodes, nNodes) + 10; % (3/4)*autoSpeed + 20;% + randi([10,50], nNodes, nNodes);
 %            GOOD autoSpeed = 40*rand(nNodes, nNodes) + 1; % In metres per minute
 %            GOOD teleSpeed = autoSpeed + 20*rand(nNodes, nNodes) + 10; %20*rand(nNodes, nNodes) + 10; % (3/4)*autoSpeed + 20;% + randi([10,50], nNodes, nNodes);
-            autoSpeed = 40*rand(nNodes, nNodes) + 1; % In metres per minute
-            teleSpeed = autoSpeed + 20*rand(nNodes, nNodes) + 40;
+            autoSpeed = 40*rand(nNodes, nNodes) + 0; % In metres per minute
+            teleSpeed = autoSpeed + 35*rand(nNodes, nNodes) + 5;
             
             % Set if some nodes are blocked (e.g., road closure, construction zone etc.)
             % We must make sure that the start node is not blocked.
-            blockedNodes = 1;
+            blockedNodes = 0;
 %             blockedNodes = randperm(nNodes, floor(nNodes*0.1));
 %             for n = blockedNodes
 %                 autoSpeed(n,:) = 0.1; %randi([10,20], 1, nNodes);
@@ -145,9 +145,11 @@ for i = 1:length(numVertices)
             % Operator availability
             % oprAvail = [2, 10, 15, 30, 35, 1000]; % Times when opr availability changes. Default start is not available, if first element is 0 mean we start with available.
             %             oprAvail = f*[sort(randi(600, 1, 14))]; % Should be even number of elements. So that the operator availability ends when t -> Inf
-
-            oprAvail = f*getOprAvail(30, 200, 10, 100, 2000); % (minUpTime, maxUpTime, minDownTime, maxDownTime, maxTime)
+            
+            oprAvail = f*getOprAvail(40, 200, 10, 100, 1000); % (minUpTime, maxUpTime, minDownTime, maxDownTime, maxTime)
 %             oprAvail = f*getOprAvail(1, 5, 1, 2, 50);
+            edgeAvail = getEdgeBudgetsAll(E, B, oprAvail);
+                
             % Initialize more result storing variables
             pathTime = zeros(1, numTests); % Time of final path
             timeCai = zeros(1, numTests); % Computation time Cai 1998
@@ -226,8 +228,14 @@ for i = 1:length(numVertices)
                 % pathAuto = staticDijkstras(edges, startVertex, goalVertex, A);
                 distToGoal = staticDijkstras([edges(:,2) edges(:,1)], goalVertex, startVertex, B', 'all');
                 tic
-                edgeAvail = getEdgeBudgets(E, B, maxTime, oprAvail);
+%                 edgeAvail = getEdgeBudgets(E, B, maxTime, oprAvail);
                 edgeAvailTime = toc;
+                if maxTime > 1000
+                    aaa= 1;
+                end
+%                 tic
+%                 edgeAvail2 = allEdgeAvail(:,:,1:maxTime+1);
+%                 edgeAvailTime2 = toc;
                 results{16}(i,j,(k-1)*numTests+itr) = edgeAvailTime;
 
 %                 tic
@@ -237,12 +245,12 @@ for i = 1:length(numVertices)
 %                 timeCai(itr) = toc;
 %                 results{2}(i,j,(k-1)*numTests+itr) = toc;
 % 
-%                 tic
-%                 %                 [pathAllT, Q, Qexp] = getRobotPathAllTime(edges, startVertex, goalVertex, A, B, oprAvail, maxWaits, pathAuto(end,2), distToGoal);
-%                 [pathAllT, Q1, Qexp1, ~] = getRobotPath(E, startVertex, goalVertex, A, B, oprAvail, edgeAvail, maxWaits, pathAuto(end,2), distToGoal, 'allT');
-%                 timeAllT(itr) = toc;% + edgeAvailTime;
-%                 results{4}(i,j,(k-1)*numTests+itr) = toc;
-%                 nodesAllT(:,itr) = [size(Q1,1); size(Qexp1,1)];
+                tic
+                %                 [pathAllT, Q, Qexp] = getRobotPathAllTime(edges, startVertex, goalVertex, A, B, oprAvail, maxWaits, pathAuto(end,2), distToGoal);
+                [pathAllT, Q1, Qexp1, ~] = getRobotPath(E, startVertex, goalVertex, A, B, oprAvail, edgeAvail, maxWaits, pathAuto(end,2), distToGoal, 'allT');
+                timeAllT(itr) = toc;% + edgeAvailTime;
+                results{4}(i,j,(k-1)*numTests+itr) = toc;
+                nodesAllT(:,itr) = [size(Q1,1); size(Qexp1,1)];
 
 %                 tic
 %                 %                 [pathNoRef, Q, Qexp] = getRobotPathNoRefine(edges, startVertex, goalVertex, A, B, oprAvail, maxWaits, pathAuto(end,2), distToGoal);
@@ -857,12 +865,28 @@ end
 
 function newE = getEdgeBudgets(E, B, T, oprAvail)
 newE = -1*ones(size(B,1),size(B,2), T+1);
-newE2 = -1*ones(size(B,1),size(B,2), T+1);
 for i = 1:ceil(size(oprAvail,2)/2)
     tCurr = oprAvail(2*i-1); % This only works if oprAvaila has even number of elements, i.e., in the end we get unavailable operator
     if tCurr > T
         break;
     end
+    changeTime = oprAvail(2*i);
+    for t = tCurr:min(T, changeTime-1)
+        % For all elements less than changeTime-t-1 add an edge
+        value = changeTime-1-t; % -1 because the availabilty changes at changeTime, so we can only assist until 1 unit before
+        currE = (B <= value) .* (value-B) .* E;
+        newE(:,:,t+1) = currE - (B>value); % subtract (B>value) so that value becomes -1 when not available, because 0 can be available with no remaining budget
+    end
+end
+end
+
+function newE = getEdgeBudgetsAll(E, B, oprAvail)
+newE = -1*ones(size(B,1),size(B,2), oprAvail(end));
+for i = 1:ceil(size(oprAvail,2)/2)
+    tCurr = oprAvail(2*i-1); % This only works if oprAvaila has even number of elements, i.e., in the end we get unavailable operator
+%     if tCurr > T
+%         break;
+%     end
     changeTime = oprAvail(2*i);
     for t = tCurr:changeTime-1
         % For all elements less than changeTime-t-1 add an edge
@@ -870,15 +894,63 @@ for i = 1:ceil(size(oprAvail,2)/2)
         currE = (B <= value) .* (value-B) .* E;
         newE(:,:,t+1) = currE - (B>value); % subtract (B>value) so that value becomes -1 when not available, because 0 can be available with no remaining budget
     end
+end
+end
+
+function [newE, oprAvailIdx] = getEdgeBudgetsSaved(E, B, T, oprAvail, Tmax, prevEdgeAvail, oprAvailIdxMax)
+newE = -1*ones(size(B,1),size(B,2), T+1);
+if Tmax >= T
+    newE = prevEdgeAvail(:,:,1:T+1);
+    oprAvailIdx = oprAvailIdxmax;
+elseif Tmax > 0
+    newE(:,:,1:T+1) = prevEdgeAvail(:,:,1:T+1);
+    for i = oprAvailIdxMax:ceil(size(oprAvail,2)/2)
+        tCurr = oprAvail(2*i-1); % This only works if oprAvail has even number of elements, i.e., in the end we get unavailable operator
+        if tCurr > T
+            break;
+        end
+        changeTime = oprAvail(2*i);
+        for t = tCurr:changeTime-1
+            % For all elements less than changeTime-t-1 add an edge
+            value = changeTime-1-t; % -1 because the availabilty changes at changeTime, so we can only assist until 1 unit before
+            currE = (B <= value) .* (value-B) .* E;
+            newE(:,:,t+1) = currE - (B>value); % subtract (B>value) so that value becomes -1 when not available, because 0 can be available with no remaining budget
+        end
+    end
+else
+    for i = 1:ceil(size(oprAvail,2)/2)
+        tCurr = oprAvail(2*i-1); % This only works if oprAvail has even number of elements, i.e., in the end we get unavailable operator
+        if tCurr > T
+            break;
+        end
+        changeTime = oprAvail(2*i);
+        for t = tCurr:changeTime-1
+            % For all elements less than changeTime-t-1 add an edge
+            value = changeTime-1-t; % -1 because the availabilty changes at changeTime, so we can only assist until 1 unit before
+            currE = (B <= value) .* (value-B) .* E;
+            newE(:,:,t+1) = currE - (B>value); % subtract (B>value) so that value becomes -1 when not available, because 0 can be available with no remaining budget
+        end
+    end
+end
+end
+
+function newE = getEdgeBudgetsBlock(E, B, T, oprAvail)
+newE = -1*ones(size(B,1),size(B,2), T+1);
+    
+for i = 1:ceil(size(oprAvail,2)/2)
+    tCurr = oprAvail(2*i-1); % This only works if oprAvaila has even number of elements, i.e., in the end we get unavailable operator
+    if tCurr > T
+        break;
+    end
+    changeTime = oprAvail(2*i);
     t_range = tCurr:changeTime-1;
-    value_range = changeTime-t_range; % No -1 for now.
+    value_range = changeTime-t_range-1;
     block = reshape(repmat(value_range,size(B,1)*size(B,2),1),size(B,1),size(B,2),[]); % Creates copies of value ranges.
     ECopy = repmat(E, 1,1,size(block,3));
     BCopy = repmat(B, 1,1,size(block,3));
     block = (block .* ECopy) - BCopy;
     block = max(block, -1); %max(block, -1);
-    newE2(:,:,tCurr+1:changeTime) = block;
-
+    newE(:,:,tCurr+1:changeTime) = block;
 end
 
 end
