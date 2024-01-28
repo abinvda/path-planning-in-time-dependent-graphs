@@ -1,7 +1,6 @@
 %% This the main code of your simulation
 clear; close;
 
-% textprogressbar('Progress: ');
 % Define test parameters
 numVertices = [64, 100, 225];%, 169, 225];%, 150, 200];
 distanceRange = [2000, 200000];% 5000, 10000];%; 600, 1000; 0, 1000];
@@ -10,7 +9,6 @@ numTests = 100;
 
 % Initialize variables to store results
 results = cell(12,1); % A cell to contain 8 results (times, nodes etc.) and 1 for test parameters
-% cell(length(numVertices), length(distanceRange), 8); % 8 is the number of quantities we want to record
 results{1} = zeros(length(numVertices), size(distanceRange, 1), numMaps*numTests); % Optimal Path length
 results{2} = zeros(length(numVertices), size(distanceRange, 1), numMaps*numTests); % Time Cai
 results{3} = zeros(length(numVertices), size(distanceRange, 1), numMaps*numTests); % Time Ours
@@ -77,21 +75,22 @@ for i = 1:length(numVertices)
                 writetable(T(1:33,:), 'Maps/routePoints/temp/routePoints100_1_33.csv')
                 writetable(T(34:66,:), 'Maps/routePoints/temp/routePoints100_34_67.csv')
                 writetable(T(67:100,:), 'Maps/routePoints/temp/routePoints100_67_100.csv')
-                don = input("Enter 1 when done with generating the distance matrix: ")
-                if don == 0
+                done = input("Enter 1 when done with generating the distance matrix: ")
+                if done == 0
                     error("Terminate now!")
                 end
                 % Go to QGIS and generate the distance matrix
+                % Read the distances after processing with QGIS
+                T1 = readtable('Maps/routePoints/temp/distMatrix100_1.csv');
+                T2 = readtable('Maps/routePoints/temp/distMatrix100_2.csv');
+                T3 = readtable('Maps/routePoints/temp/distMatrix100_3.csv');
+                T = [T1; T2; T3];
+                writetable(T, 'Maps/routePoints/temp/distMatrix100.csv')
             else
                 euclid = 1;
             end
         end
-        % Read the distances after processing with QGIS
-%         T1 = readtable('Maps/routePoints/temp/distMatrix100_1.csv');
-%         T2 = readtable('Maps/routePoints/temp/distMatrix100_2.csv');
-%         T3 = readtable('Maps/routePoints/temp/distMatrix100_3.csv');
-%         T = [T1; T2; T3];
-%         writetable(T, 'Maps/routePoints/temp/distMatrix100.csv')
+        
         if euclid == 0 
             T = readtable(['Maps/routePoints/distMatrix' num2str(nNodes) '.csv']);
             D = T.DIST_KM * 1000;
@@ -100,59 +99,31 @@ for i = 1:length(numVertices)
         while k <= numMaps % Now, the maps represent different speed and waiting restrictions.
             %  E = triu(E);
             f = 1; % Remember that distances are in metres % Let's keep time in minutes for now
-%             aaaa = zeros(10000,1);
-%             aaa = zeros(10000,1);
-%             for kk = 1:10000
-%                 aaaa(kk) = 40*rand() + 1; % max(1, normrnd(20, 0.5));
-%                 aaa(kk) = aaaa(kk) + 20*rand() + 10; %max(1, normrnd(5, 0.5)); %10*lognrnd(0, 0.5);
-%             end
-%             histogram(aaaa)
-%             hold on
-%             histogram(aaa)
-%             figure(2);
-%             plot(aaa, aaaa, '.')
-%             axis equal
-%             hold on
-%             plot(aaaa, aaaa)
-            
-%             autoSpeed = max(1, normrnd(20, 0.5, [nNodes, nNodes])); %10*lognrnd(0, 0.5, [nNodes, nNodes]) + 10; %40*rand(nNodes, nNodes) + 1; % In metres per minute
-%             teleSpeed = autoSpeed + max(1, normrnd(5, 0.5, [nNodes, nNodes])); %+ 20*rand(nNodes, nNodes) + 10; %20*rand(nNodes, nNodes) + 10; % (3/4)*autoSpeed + 20;% + randi([10,50], nNodes, nNodes);
-%            GOOD autoSpeed = 40*rand(nNodes, nNodes) + 1; % In metres per minute
-%            GOOD teleSpeed = autoSpeed + 20*rand(nNodes, nNodes) + 10; %20*rand(nNodes, nNodes) + 10; % (3/4)*autoSpeed + 20;% + randi([10,50], nNodes, nNodes);
             autoSpeed = 40*rand(nNodes, nNodes) + 0; % In metres per minute
             teleSpeed = autoSpeed + 35*rand(nNodes, nNodes) + 5;
             
             % Set if some nodes are blocked (e.g., road closure, construction zone etc.)
-            % We must make sure that the start node is not blocked.
-            blockedNodes = 0;
-%             blockedNodes = randperm(nNodes, floor(nNodes*0.1));
-%             for n = blockedNodes
-%                 autoSpeed(n,:) = 0.1; %randi([10,20], 1, nNodes);
-%             end
+            blockedNodes = randperm(nNodes, floor(nNodes*0.1));
+            for n = blockedNodes
+                autoSpeed(n,:) = 0.1;
+            end
 
             % Get edge duration matrices based on speeds
             A = f*ceil(D ./ autoSpeed);
             B = f*ceil(D ./ teleSpeed);
-            %             B = f*randi([10,50], nNodes, nNodes) .* E;
-            %             A = B + f*(randi([10,50], nNodes, nNodes) .* E);
             [eX,eY] = find(E);
             edges = [eX eY];
             edgesCai = [eX eY; eX eY+nNodes];
 
-            % max waiting times at each node
+            % Maximum waiting times at each node
             maxWaits = f*randi([0, 15], [nNodes, 1]); %11*ones(nNodes,1);
 
-            % Operator availability
-            % oprAvail = [2, 10, 15, 30, 35, 1000]; % Times when opr availability changes. Default start is not available, if first element is 0 mean we start with available.
-            %             oprAvail = f*[sort(randi(600, 1, 14))]; % Should be even number of elements. So that the operator availability ends when t -> Inf
-            
             oprAvail = f*getOprAvail(40, 200, 10, 100, 1000); % (minUpTime, maxUpTime, minDownTime, maxDownTime, maxTime)
-%             oprAvail = f*getOprAvail(1, 5, 1, 2, 50);
             edgeAvail = getEdgeBudgetsAll(E, B, oprAvail);
                 
             % Initialize more result storing variables
             pathTime = zeros(1, numTests); % Time of final path
-            timeCai = zeros(1, numTests); % Computation time Cai 1998
+            timeCai = zeros(1, numTests); % Computation time TDSP-CWT algorithm
             timeOur = zeros(1, numTests);
             timeAllT = zeros(1, numTests);
             timeNoRef = zeros(1, numTests);
@@ -180,7 +151,6 @@ for i = 1:length(numVertices)
                 end
                 getNewMap = 0;
                 if goalVertex == 0
-                    % drawmap(E, xMax, yMax, posX, posY, startVertex, goalVertex, distanceRange(j,1), distanceRange(j,2))
                     getNewMap = 1;
                     disp('No node in given range.')
                     break;
@@ -193,71 +163,26 @@ for i = 1:length(numVertices)
                 end
                 maxTime = pathAuto(end,2);
 
-                %                 oprAvail = f*[sort(randi(maxTime, 1, floor(maxTime/40)))];
-                %                 if mod(size(oprAvail,2),2) == 1
-                %                     oprAvail = [oprAvail, 2*maxTime];
-                %                 end
-
-                % currA = 0;
-                % oprAvail = [];
-                % p = 0.6;
-                % minUpTime = 30;
-                % minDownTime = 10;
-                % for i = 1:maxTime
-                %     if isempty(oprAvail) || (currA == 1 && i-oprAvail(end) >= minUpTime) || (currA == 0 && i-oprAvail(end) >= minDownTime)
-                %         nextA = rand() < p;
-                %         if nextA ~= currA
-                %             oprAvail = [oprAvail, i];
-                %             currA = nextA;
-                %         end
-                %     end
-                % end
                 %% Robot path
                 % A robot's path is a kx4 matrix. Specified as a list of nodes to traverse, arrival times, wait times at those nodes and mode of operation.
-
-                %% TODO: A function to compute path
-                % tic
-
-                % load('variables');
-
 
                 pathTele = staticDijkstras(edges, startVertex, goalVertex, B);
                 if isempty(pathTele)
                     haha = 1;
                 end
-                % pathAuto = staticDijkstras(edges, startVertex, goalVertex, A);
                 distToGoal = staticDijkstras([edges(:,2) edges(:,1)], goalVertex, startVertex, B', 'all');
                 tic
-%                 edgeAvail = getEdgeBudgets(E, B, maxTime, oprAvail);
                 edgeAvailTime = toc;
                 if maxTime > 1000
                     aaa= 1;
                 end
-%                 tic
-%                 edgeAvail2 = allEdgeAvail(:,:,1:maxTime+1);
-%                 edgeAvailTime2 = toc;
                 results{16}(i,j,(k-1)*numTests+itr) = edgeAvailTime;
 
-%                 tic
-%                 edgeAvailCai = edgeAvailability(B, maxTime, oprAvail);
-%                 pathCai = TCSPCai1998(edgesCai, startVertex, goalVertex, A, B, oprAvail, edgeAvailCai, maxWaits, pathAuto(end,2));
-%                 % visualizeExploration(Q, Qexp, posX, posY, 'r', 1)
-%                 timeCai(itr) = toc;
-%                 results{2}(i,j,(k-1)*numTests+itr) = toc;
-% 
                 tic
-                %                 [pathAllT, Q, Qexp] = getRobotPathAllTime(edges, startVertex, goalVertex, A, B, oprAvail, maxWaits, pathAuto(end,2), distToGoal);
                 [pathAllT, Q1, Qexp1, ~] = getRobotPath(E, startVertex, goalVertex, A, B, oprAvail, edgeAvail, maxWaits, pathAuto(end,2), distToGoal, 'allT');
                 timeAllT(itr) = toc;% + edgeAvailTime;
                 results{4}(i,j,(k-1)*numTests+itr) = toc;
                 nodesAllT(:,itr) = [size(Q1,1); size(Qexp1,1)];
-
-%                 tic
-%                 %                 [pathNoRef, Q, Qexp] = getRobotPathNoRefine(edges, startVertex, goalVertex, A, B, oprAvail, maxWaits, pathAuto(end,2), distToGoal);
-%                 [pathNoRef, Q2, Qexp2, ~] = getRobotPath(E, startVertex, goalVertex, A, B, oprAvail, edgeAvail, maxWaits, pathAuto(end,2), distToGoal, 'noref');
-%                 timeNoRef(itr) = toc;% + edgeAvailTime;
-%                 results{5}(i,j,(k-1)*numTests+itr) = toc;
-%                 nodesNoRef(:,itr) = [size(Q2,1); size(Qexp2,1)];
 
                 tic % This one's not optimal (Greedy)
                 [pathFast, Q4, Qexp4]  = fastestTaskDijkstras(startVertex, goalVertex, A, B, edgeAvail, maxWaits, distToGoal, 0);
@@ -274,40 +199,24 @@ for i = 1:length(numVertices)
                 pathTime(itr) = pathOur(end,2);
                 results{14}(i,j,(k-1)*numTests+itr) = sum(pathOur(:,3)); % Store total wait time for this instance
                 results{15}(i,j,(k-1)*numTests+itr) = size(pathOur,1); % Store the number of vertices in the path.
-%                 [size(Q3,1), size(Qexp3,1), cc]
                 if size(pathOur,1) == 0
                     w = 1;
                 end
-
-
-                % visualizeExploration(Q, Qexp, posX, posY, 'b', 2)
-%                 if ~isequal(pathOur(end,2), pathAllT(end,2)) %, pathNoRef(end,2))
-%                     aa = 1
-%                 %                if pathFast(end,2) < pathOur(end,2) || timeFast(itr) > timeOur(itr)
-% %                                     drawmap(E, xMax, yMax, posX, posY, startVertex, goalVertex, distanceRange(j,1), distanceRange(j,2))
-%                 %                     drawmap(E, xMax, yMax, posX, posY, startVertex, goalVertex, 0, 0, pathOur)
-%                 %                     pathCai
-%                 %                     pathOur
-% %                                     disp("Wrong!!!")
-%                 end
-                %                 drawmap(E, xMax, yMax, posX, posY, startVertex, goalVertex, 0, 0, pathOur)
-                %                 [pathFast(end,2), pathOur(end,2)]
             end
             if getNewMap == 1
                 continue;
             end
             pathTime2((k-1)*numTests+1:k*numTests) = pathTime;
             pathTimeFast2((k-1)*numTests+1:k*numTests) = pathTimeFast;
-%             timeCai2((k-1)*numTests+1:k*numTests) = timeCai;
-%             timeOur2((k-1)*numTests+1:k*numTests) = timeOur;
-%             timeAllT2((k-1)*numTests+1:k*numTests) = timeAllT;
-%             timeNoRef2((k-1)*numTests+1:k*numTests) = timeNoRef;
-%             timeFast2((k-1)*numTests+1:k*numTests) = timeFast;
-%             timeCai2(k) = mean(timeCai);
-%             timeOur2(k) = mean(timeOur);
-%             timeAllT2(k) = mean(timeAllT);
-%             timeNoRef2(k) = mean(timeNoRef);
-%             timeFast2(k) = mean(timeFast);
+            timeOur2((k-1)*numTests+1:k*numTests) = timeOur;
+            timeAllT2((k-1)*numTests+1:k*numTests) = timeAllT;
+            timeNoRef2((k-1)*numTests+1:k*numTests) = timeNoRef;
+            timeFast2((k-1)*numTests+1:k*numTests) = timeFast;
+            timeCai2(k) = mean(timeCai);
+            timeOur2(k) = mean(timeOur);
+            timeAllT2(k) = mean(timeAllT);
+            timeNoRef2(k) = mean(timeNoRef);
+            timeFast2(k) = mean(timeFast);
 
 
             nodesOur2(:, k) = mean(nodesOur, 2);
@@ -316,35 +225,20 @@ for i = 1:length(numVertices)
             nodesFast2(:, k) = mean(nodesFast, 2);
 
             k = k + 1;
-
-            % disp(itr)
-            %             textprogressbar(itr/numTests*100);
         end
         % Store results for the particular test condition
         results{1}(i,j,:) = pathTime2;
-%         results{2}(i,j,:) = (timeCai2);
-%         results{3}(i,j,:) = (timeOur2);
-%         results{4}(i,j,:) = (timeAllT2);
-%         results{5}(i,j,:) = (timeNoRef2);
         results{6}(i,j,:) = mean(nodesOur2, 2);
         results{7}(i,j,:) = mean(nodesAllT2, 2);
         results{8}(i,j,:) = mean(nodesNoRef2, 2);
-
-%         results{11}(i,j,:) = (timeFast2);
         results{12}(i,j,:) = pathTimeFast2;
         results{13}(i,j,:) = mean(nodesFast2, 2);
 
     end
 end
-% Close the progress bar
-% textprogressbar('done');
-% fprintf('\n');
-
-% save("variables.mat")
 save("results.mat")
 
 %% Plotting
-% Computation Time (nVertices = x)
 load("results.mat")
 close;
 %%
@@ -353,27 +247,15 @@ subplot(1,2,1);
 x = 1:size(results{10},1); % x values
 yLim = 1.1*max(max([results{2} results{3} results{4} results{5} results{11}]));
 for i = 1%:size(results{9},2)
-%     subplot(1,size(results{9},2),i)
-
-%     timeCai = results{2}(:,:);
-%     timeOurs = results{3}(:,:);
-%     timeNoBud = results{4}(:,:);
-%     timeNoRef = results{5}(:,:);
-%     timeFast = results{11}(:,:);
     timeCai = mean(results{2},3);
     timeOurs = mean(results{3},3);
     timeNoBud = mean(results{4},3);
     timeNoRef = mean(results{5},3);
     timeFast = mean(results{11},3);
-%     timeEdge = mean(results{16},3);
 
     % Plot the bar graph
-%     bar([timeCai, timeNoBud, timeNoRef, timeOurs, timeFast]);
-%     Y = [timeCai, timeNoBud+timeEdge, timeOurs+timeEdge, timeFast+timeEdge];
     Y = [timeCai, timeNoBud, timeOurs, timeFast];
     hBar = bar(Y);
-%     ylim([0 yLim])
-%     title("No. of Vertices = " + results{9}(i))
     % Add labels and legend
     xlabel('No. of Vertices');
     set(gca,'xticklabel',{'64', '100', '225', '400'})
@@ -391,7 +273,6 @@ for i = 1%:size(results{9},2)
 end
 
 %% Computation time vs path length
-% figure(11);
 subplot(1,2,2)
 ii = 4;
 pathOurs = results{1}(:,:,:);
@@ -401,7 +282,6 @@ timeOurs = reshape(results{3}(:,:,:), [1, numel(pathOurs)]);
 timeNoBud = reshape(results{4}(:,:,:), [1, numel(pathOurs)]);
 timeNoRef = reshape(results{5}(:,:,:), [1, numel(pathOurs)]);
 timeFast = reshape(results{11}(:,:,:), [1, numel(pathOurs)]);
-% timeEdge = reshape(results{16}(:,:,:), [1, numel(pathOurs)]); % Time taken to compute edgeAvail matrix
 timeEdge = 0;
 plot(pathOurs, timeCai, '.')
 hold on
@@ -453,13 +333,11 @@ for i = 1:size(results{9},2)
     nodesNoRef = reshape(mean(results{8}(i,:,:),2), [1 2]);
     nodesFast = reshape(mean(results{13}(i,:,:),2), [1 2]);
 
-%     hi = [nodesNoBud; nodesNoRef; nodesOurs; nodesFast];
     hi = [nodesNoBud; nodesOurs; nodesFast];
     bar(hi,'stacked')
 
     % Add labels and legend
     title("No. of Vertices = " + results{9}(i))
-%     xlabel('Method');
     set(gca,'xticklabel',{'Time-expanded A*','Proposed', 'Greedy'})
     ylim([0 yLim])
     if i == 1 %size(results{9},2)
@@ -472,44 +350,6 @@ for i = 1:size(results{9},2)
 end
 
 
-% %% Nodes explored all
-% figure(22);
-% s = size(results{9},2);
-% nodesOurs = sum(reshape(mean(results{6}(:,:,:),2), [s 2]), 2);
-% nodesNoBud = sum(reshape(mean(results{7}(:,:,:),2), [s 2]), 2);
-% nodesNoRef = sum(reshape(mean(results{8}(:,:,:),2), [s 2]), 2);
-% nodesFast = sum(reshape(mean(results{13}(:,:,:),2), [s 2]), 2);
-% hi = [nodesNoBud, nodesOurs, nodesFast];
-% yLim = 1.1*max(max(hi));
-% 
-% hp = bar(hi);
-% cm = ['r','g','b','y','k']; % or replace with the desired colormap
-% hatchfill2(hp(1),'single','HatchAngle',-45);
-% hatchfill2(hp(2),'cross','HatchAngle',45);
-% hatchfill2(hp(3),'single','HatchAngle',45);
-% for b = 1:numel(hp)
-%     hp(b).FaceColor = 'none';
-% end
-% hold on
-% nodesOurs = reshape(mean(results{6}(:,:,1),2), [s 1]);
-% nodesNoBud = reshape(mean(results{7}(:,:,1),2), [s 1]);
-% nodesNoRef = reshape(mean(results{8}(:,:,1),2), [s 1]);
-% nodesFast = reshape(mean(results{13}(:,:,1),2), [s 1]);
-% hi = [nodesNoBud, nodesOurs, nodesFast];
-% 
-% hp = bar(hi);
-% hold off
-% set(gca, 'YScale', 'log')
-% set(gca,'xticklabel',{'64','100', '225'})
-% xlabel('Number of Vertices');
-% ylabel('Nodes Generated (Mean)');
-% % legend('Nodes not explored', 'Nodes explored')
-% legend({'Time-expanded A*', 'Proposed', 'Greedy'}, 'Location', 'northwest');
-% 
-%     
-% % ylim([0 yLim])
-% 
-%% Compare solution (path) length
 figure(3);
 x = 1:size(results{10},1); % x values
 % yLim = 1.1*max(abs(results{12}-results{1})./results{1},[],'all');
@@ -531,7 +371,6 @@ for i = 1:size(results{9},2)
         title("No. of Vertices = " + results{9}(i))
         % Add labels and legend
             xlabel('Relative Path Length');
-%             set(gca,'xticklabel',{'49', '64'})
         if i == size(results{9},2)
             ignore = 1;
         elseif i == 1
@@ -549,7 +388,6 @@ pathOurs = reshape(pathOurs, [1, numel(pathOurs)]);
 pathFast = results{12}(:,:,:);
 pathFast = reshape(pathFast, [1, numel(pathFast)]);
 
-% plot(log(pathOurs), log(pathFast), 'o')
 plot((pathOurs), (pathFast), 'o','MarkerFaceColor', 'k')
 hold on
 plot([0 max(pathFast)], [0 max(pathFast)], 'LineWidth', 3)
@@ -559,158 +397,6 @@ hold off
 xlim([0 max(pathFast)])
 ylim([0 max(pathFast)])
 set(gca,'FontSize',16)
-
-%% OLD Path Length comparison (mean and 20%)
-% axis equal
-% meanOurs = mean(pathOurs);
-% meanFast = mean(pathFast);
-% 
-% sortedOurs = sort(pathOurs, 'descend');
-% sortedFast = sort(pathFast, 'descend');
-% meanOurs20 = mean(sortedOurs(1:floor(numel(sortedOurs)*0.2)));
-% meanFast20 = mean(sortedFast(1:floor(numel(sortedFast)*0.2)));
-% 
-% diff = (pathFast-pathOurs);%./pathOurs;
-% sortedDiff = sortrows([diff' pathOurs' pathFast'], 1, 'descend');
-% meanOursDiff20 = mean(sortedDiff(1:floor(numel(sortedOurs)*0.2), 2));
-% meanFastDiff20 = mean(sortedDiff(1:floor(numel(sortedFast)*0.2), 3));
-% 
-% diff = (pathFast-pathOurs)./pathOurs;
-% sortedDiff = sortrows([diff' pathOurs' pathFast'], 1, 'descend');
-% meanOursDiff30 = mean(sortedDiff(1:floor(numel(sortedOurs)*0.3), 2));
-% meanFastDiff30 = mean(sortedDiff(1:floor(numel(sortedFast)*0.3), 3));
-% 
-% % Plot the graph
-% bar([(meanFast-meanOurs)/meanOurs; (meanFastDiff20-meanOursDiff20)/meanOursDiff20]);
-% set(gca,'xticklabel',{'Mean', 'Worst 20%'})
-% yLim = max(yLim, (meanFastDiff20-meanOursDiff20)/meanOursDiff20);
-% title("Average and Worst 20% comparison")
-% if i == 1
-%     ylabel('Relative path length');
-% end
-% 
-% 
-% 
-%% Violin Compare solution (path) length
-% figure(5);
-% 
-% pathOurs = results{1}(:,:,:);
-% pathOurs = reshape(pathOurs, [1, numel(pathOurs)]);
-% pathFast = results{12}(:,:,:);
-% pathFast = reshape(pathFast, [1, numel(pathFast)]);
-% 
-% % Plot the graph
-% diff = (pathFast-pathOurs)./pathOurs;
-% % violin(diff')
-% boxplot(diff')
-% % set(gca,'xticklabel',{'Mean', 'Worst 20%'})
-% % yLim = max(yLim, (meanFastDiff20-meanOursDiff20)/meanOursDiff20);
-% title("Performance comparison")
-% if i == 1
-%     ylabel('Relative path length');
-% end
-% done = 1;
-% 
-% 
-
-
-
-%%
-%% Plotting (OLD)
-% % Computation Time (nVertices = x)
-% figure(1);
-% x = 1:size(results{10},1); % x values
-% yLim = 1.1*max(max([results{2} results{3} results{4} results{5} results{11}]));
-% for i = 1:size(results{9},2)
-%     subplot(1,size(results{9},2),i)
-% 
-%     timeCai = results{2}(i,:);
-%     timeOurs = results{3}(i,:);
-%     timeNoBud = results{4}(i,:);
-%     timeNoRef = results{5}(i,:);
-%     timeFast = results{11}(i,:);
-% 
-%     % Plot the bar graph
-%     bar(x, [timeCai; timeNoBud; timeNoRef; timeOurs; timeFast]');
-%     ylim([0 yLim])
-% %     title("No. of Vertices = " + results{9}(i))
-%     % Add labels and legend
-%     xlabel('Distance Range');
-%     set(gca,'xticklabel',{'0-300', '300-600', '600-1000'})
-%     if i == size(results{9},2)
-%         ignore = 1;
-%     elseif i == 1
-%         legend('Cai', 'No Budget', 'No Refinement', 'Ours', 'Fast');
-%         ylabel('Computation Time');
-%     end
-% end
-% 
-% 
-% % Nodes Explored
-% figure(2);
-% x = ['No Budget', 'No Refinement', 'Ours']; % x values
-% nodesOurs = mean(results{6}(:,:,:),2);
-% nodesNoBud = mean(results{7}(:,:,:),2);
-% nodesNoRef = mean(results{8}(:,:,:),2);
-% nodesFast = mean(results{13}(:,:,:),2);
-% hi = sum([nodesNoBud; nodesNoRef; nodesOurs; nodesFast], 3);
-% yLim = 1.1*max(max(hi));
-% for i = 1:size(results{9},2)
-%     subplot(1,size(results{9},2),i)
-% 
-%     nodesOurs = reshape(mean(results{6}(i,:,:),2), [1 2]);
-%     nodesNoBud = reshape(mean(results{7}(i,:,:),2), [1 2]);
-%     nodesNoRef = reshape(mean(results{8}(i,:,:),2), [1 2]);
-%     nodesFast = reshape(mean(results{13}(i,:,:),2), [1 2]);
-% 
-%     hi = [nodesNoBud; nodesNoRef; nodesOurs; nodesFast];
-%     bar(hi,'stacked')
-% 
-%     % Add labels and legend
-%     title("No. of Vertices = " + results{9}(i))
-%     xlabel('Method');
-%     set(gca,'xticklabel',{'No Budget','No Refinement','Ours', 'Fast'})
-%     ylim([0 yLim])
-%     if i == 1 %size(results{9},2)
-%         ylabel('Nodes');
-%         legend('Nodes generated', 'Nodes explored')
-%     end
-% end
-% 
-% %% Compare solution (path) length
-% figure(3);
-% x = 1:size(results{10},1); % x values
-% % yLim = 1.1*max(abs(results{12}-results{1})./results{1},[],'all');
-% for i = 1:size(results{9},2)
-%     for j = 1:size(distanceRange,1)
-%         subplot(size(distanceRange,1),size(results{9},2),i+(j-1)*size(results{9},2))
-% 
-%         pathFast = results{12}(i,j,:);
-%         pathOurs = results{1}(i,j,:);
-% 
-%         % Plot the graph
-%         diff = (pathFast-pathOurs)./pathOurs;
-%         diff = sort(diff);
-%         a = diff(floor(numel(diff)*0.8):end);
-%         histogram(diff)
-%         [mean(diff), mean(diff(diff>0)), mean(a)]
-%         %     bar(x, [pathFast; pathOurs]');
-%         %     ylim([0 yLim])
-%         title("No. of Vertices = " + results{9}(i))
-%         % Add labels and legend
-%         %     xlabel('Distance Range');
-%         %     set(gca,'xticklabel',{'0-300', '300-600', '600-1000'})
-%         if i == size(results{9},2)
-%             ignore = 1;
-%         elseif i == 1
-%             %         legend('Fast', 'Ours');
-%             ylabel('Path Length');
-%         end
-%     end
-% end
-
-
-%%
 
 function oprAvail = getOprAvail(minUpTime, maxUpTime, minDownTime, maxDownTime, maxTime)
 oprAvail = [];
@@ -724,143 +410,6 @@ while t < maxTime
     oprAvail(end+1) = t+ut;
     t = t+ut;
 end
-end
-
-% plot(pathTime, timeCai, '*')
-% hold on
-% plot(pathTime, timeOur, 'o')
-% plot(pathTime, timeAllT, 's')
-% plot(pathTime, timeNoRef, '.')
-% xlabel('Duration of optimal path (sec)', 'FontSize', 18)
-% ylabel('Computation time (sec)', 'FontSize', 18)
-% legend('Cai 1998', 'Ours', 'All Times', 'No Refinement')
-% title("No. of Nodes = " + nNodes)
-% ax = gca;
-% ax.FontSize = 15;
-%
-% % Fit a linear curve to the data for timeCai
-% p = polyfit(pathTime, timeCai, 1);
-%
-% % Evaluate the curve at a fine grid of points
-% t = linspace(min(pathTime), max(pathTime), 100);
-% y = polyval(p, t);
-%
-% % Plot the curve
-% plot(t, y, '--', 'LineWidth', 2);
-%
-% % Fit a linear curve to the data for timeOur
-% p = polyfit(pathTime, timeOur, 1);
-%
-% % Evaluate the curve at a fine grid of points
-% t = linspace(min(pathTime), max(pathTime), 100);
-% y = polyval(p, t);
-%
-% % Plot the curve
-% plot(t, y, '--', 'LineWidth', 2);
-%
-% %% Plot 2
-% plot(pathTime, nodesAllT(1,:), '*')
-% hold on
-% % plot(pathTime, nodesAllT(2,:), '*')
-% plot(pathTime, nodesNoRef(1,:), 'o')
-% % plot(pathTime, nodesNoRef(2,:), 'o')
-% plot(pathTime, nodesOur(1,:), 's')
-% % plot(pathTime, nodesOur(2,:), 's')
-% legend('All Times', 'No Refinement', 'Ours')
-%
-% % g = 1;
-% % reshaped = reshape(nodesAllT, [2, 25, g]);
-% % mean_matrix = mean(reshaped, 2);
-% % m1 = reshape(mean_matrix, [2, g]);
-% %
-% % reshaped = reshape(nodesNoRef, [2, 25, g]);
-% % mean_matrix = mean(reshaped, 2);
-% % m2 = reshape(mean_matrix, [2, g]);
-% %
-% % reshaped = reshape(nodesOur, [2, 25, g]);
-% % mean_matrix = mean(reshaped, 2);
-% % m3 = reshape(mean_matrix, [2, g]);
-%
-% %%
-% nAll = mean(nodesAllT, 2);
-% nNoR = mean(nodesNoRef, 2);
-% nOur = mean(nodesOur, 2);
-% hi = [nAll'; nNoR'; nOur'];
-% bar(hi,'stacked')
-% set(gca,'xticklabel',{'All Time','No Refinement','Ours'},'FontSize', 18)
-% legend('Nodes generated', 'Nodes explored')
-%
-% %%
-% x = 1:g;
-% bar(x, m1, 'stacked');
-% hold on;
-%
-% % Plot the second bar in each group
-% bar(x, m2, 'stacked');
-%
-% % Plot the third bar in each group
-% bar(x, m3, 'stacked');
-%
-% % % Plot the number of nodes explored by each algorithm
-% hold on
-% errorbar(x, nodesAllT(1,:), nodesAllT(2,:), nodesAllT(1,:), 'b', 'LineWidth', 2, 'LineStyle', 'none');
-% errorbar(x, nodesNoRef(1,:), nodesNoRef(2,:), nodesNoRef(1,:), 'r', 'LineWidth', 2, 'LineStyle', 'none');
-% errorbar(x, nodesOur(1,:), nodesOur(2,:), nodesOur(1,:), 'k', 'LineWidth', 2, 'LineStyle', 'none');
-% %
-% % % Plot the number of nodes generated by each algorithm
-% % stem(x, nodesAllT(2,:), '--b', 'LineWidth', 2);
-% % stem(x, nodesOur(2,:), '--r', 'LineWidth', 2);
-%%
-
-function textprogressbar(c)
-%% Initialization
-persistent strCR;           %   Carriage return pesistent variable
-
-% Vizualization parameters
-strPercentageLength = 10;   %   Length of percentage string (must be >5)
-strDotsMaximum      = 10;   %   The total number of dots in a progress bar
-
-%% Main
-
-if isempty(strCR) && ~ischar(c)
-    % Progress bar must be initialized with a string
-    %     error('The text progress must be initialized with a string');
-    fprintf('%s','Progress2: ');
-    strCR = -1;
-elseif isempty(strCR) && ischar(c)
-    % Progress bar - initialization
-    fprintf('%s',c);
-    strCR = -1;
-elseif ~isempty(strCR) && ischar(c)
-    % Progress bar  - termination
-    strCR = [];
-    fprintf([c '\n']);
-elseif isnumeric(c)
-    % Progress bar - normal progress
-    c = floor(c);
-    percentageOut = [num2str(c) '%%'];
-    percentageOut = [percentageOut repmat(' ',1,strPercentageLength-length(percentageOut)-1)];
-    nDots = floor(c/100*strDotsMaximum);
-    dotOut = ['[' repmat('.',1,nDots) repmat(' ',1,strDotsMaximum-nDots) ']'];
-    strOut = [percentageOut dotOut];
-
-    % Print it on the screen
-    if strCR == -1
-        % Don't do carriage return during first run
-        fprintf(strOut);
-    else
-        % Do it during all the other runs
-        fprintf([strCR strOut]);
-    end
-
-    % Update carriage return
-    strCR = repmat('\b',1,length(strOut)-1);
-
-else
-    % Any other unexpected input
-    error('Unsupported argument type');
-end
-
 end
 
 function newE = getEdgeBudgets(E, B, T, oprAvail)
@@ -884,9 +433,6 @@ function newE = getEdgeBudgetsAll(E, B, oprAvail)
 newE = -1*ones(size(B,1),size(B,2), oprAvail(end));
 for i = 1:ceil(size(oprAvail,2)/2)
     tCurr = oprAvail(2*i-1); % This only works if oprAvaila has even number of elements, i.e., in the end we get unavailable operator
-%     if tCurr > T
-%         break;
-%     end
     changeTime = oprAvail(2*i);
     for t = tCurr:changeTime-1
         % For all elements less than changeTime-t-1 add an edge
@@ -966,8 +512,6 @@ for i = 1:ceil(size(oprAvail,2)/2)
     for t = tCurr:changeTime-1
         % For all elements less than changeTime-t-1 add an edge
         value = changeTime-1-t; % -1 because the availabilty changes at changeTime, so we can only assist until 1 unit before
-%         currE = (B <= value) .* (value-B);
-%         newE(:,:,t+1) = currE; % t+1 because we start with t=0
         newE(:,:,t+1) = B<=value;
     end
 end
